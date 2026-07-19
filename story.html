@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SafeGear · เรื่องเล่าความปลอดภัย</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Three.js r128 (UMD, global THREE) — เวอร์ชันเดียวกับที่พิสูจน์แล้วว่าโหลดได้ในโปรเจคนี้ -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<style>
+/* ============================================================
+   ธีม SAFETY TAPE — ชุดเดียวกับ index.html (ดำ + เหลืองจราจร)
+   ============================================================ */
+:root{
+  --bg:#0a0a0b; --bg2:#121216; --card:#17181c; --card2:#1e1f24;
+  --line:#2a2c33; --line2:#3a3d45;
+  --y:#ffd21e; --y2:#e0b500;
+  --red:#e02424; --green:#2fbf5f; --orange:#f0851a;
+  --tx:#eceded; --tx2:#9a9da5; --tx3:#6b6e77;
+  --tape:repeating-linear-gradient(45deg,#ffd21e 0 18px,#0a0a0b 18px 36px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--tx);
+  font-family:'Kanit',system-ui,sans-serif; font-size:16px; line-height:1.55;
+  overflow-x:hidden;
+}
+body::before,body::after{content:'';position:fixed;left:0;right:0;height:3px;background:var(--red);z-index:60;pointer-events:none}
+body::before{top:0} body::after{bottom:0}
+button,input{font-family:inherit;font-size:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none}
+h1,h2,h3{margin:0;font-weight:800;letter-spacing:-.02em}
+a{color:var(--y)}
+
+.btn{
+  background:var(--y); color:#0a0a0b; font-weight:700; border-radius:11px;
+  padding:13px 22px; min-height:48px; display:inline-flex; align-items:center; justify-content:center;
+  gap:8px; white-space:nowrap; text-decoration:none; transition:transform .08s
+}
+.btn:active{transform:scale(.97)}
+.btn:disabled{background:#3a3d45;color:var(--tx3);cursor:default}
+.btn.ghost{background:transparent;border:1.5px solid var(--line2);color:var(--tx)}
+.inp{
+  width:100%; background:var(--bg2); border:1.5px solid var(--line); border-radius:11px;
+  padding:13px 15px; min-height:48px; color:var(--tx); outline:none
+}
+.inp:focus{border-color:var(--y)}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:5px 11px;border-radius:999px}
+.badge-dang{background:rgba(224,36,36,.15);color:#ff6b6b}
+.eyebrow{font-size:11px;letter-spacing:.28em;color:var(--tx3);font-weight:600;text-transform:uppercase}
+.tape-thin{height:8px;background:var(--tape)}
+
+/* ---------- ด่านใส่รหัส ---------- */
+#gate{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--bg)}
+.gatebox{width:100%;max-width:430px}
+.gatehead{text-align:center;margin-bottom:22px}
+.gatehead .mark{width:66px;height:66px;border-radius:17px;background:var(--y);margin:0 auto 16px;
+  display:flex;align-items:center;justify-content:center;font-size:29px;font-weight:800;color:#0a0a0b}
+.gatehead h1{font-size:26px}
+.gatehead p{color:var(--tx2);font-size:14px;margin:7px 0 0}
+.gcard{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--y);border-radius:14px;padding:20px}
+
+/* ---------- เวที 3D ---------- */
+#cv{position:fixed;inset:0;width:100%;height:100%;z-index:1;display:block;touch-action:pan-y}
+/* ไล่เฉดมืดขอบจอ ให้ตัวหนังสืออ่านออกทุกฉาก (ถูกกว่า post-processing มาก) */
+#vig{position:fixed;inset:0;z-index:2;pointer-events:none;
+  background:radial-gradient(ellipse at 50% 45%,transparent 30%,rgba(10,10,11,.55) 78%,rgba(10,10,11,.9) 100%)}
+
+/* ---------- ฉาก (ข้อความ) ---------- */
+#scenes{position:relative;z-index:3}
+.sc{min-height:100vh;min-height:100svh;display:flex;align-items:center;padding:80px 34px;pointer-events:none}
+.sc.right{justify-content:flex-end}
+.sc.center{justify-content:center;text-align:center}
+/* ฉากเปิด: การ์ดลงไปอยู่ครึ่งล่าง เปิดพื้นที่ครึ่งบนให้หมวกนิรภัยเป็นพระเอกเต็มตัว */
+.sc.low{align-items:flex-end;padding-bottom:92px}
+.cap{
+  max-width:430px;background:rgba(18,18,22,.82);backdrop-filter:blur(7px);
+  border:1px solid var(--line);border-left:4px solid var(--y);border-radius:14px;
+  padding:22px 24px;pointer-events:auto;
+  opacity:0;transform:translateY(26px);will-change:opacity,transform
+}
+.sc.center .cap{border-left:0;border-top:4px solid var(--y);max-width:560px}
+.cap h2{font-size:27px;line-height:1.25;margin-bottom:10px}
+.cap p{color:var(--tx2);font-size:15px;margin:0 0 12px}
+.cap p:last-child{margin-bottom:0}
+.cap b{color:var(--tx)}
+.big{font-size:44px;font-weight:800;color:var(--y);line-height:1;letter-spacing:-.03em;display:block}
+.cap .tape-thin{border-radius:3px;margin:14px 0}
+
+.kgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0 4px}
+.kbox{background:var(--card2);border:1px solid var(--line);border-radius:11px;padding:12px 13px;text-align:left}
+.kbox .n{font-size:26px;font-weight:800;color:var(--y);line-height:1.1;letter-spacing:-.02em}
+.kbox .l{font-size:11.5px;color:var(--tx3);margin-top:2px}
+.kbox.dang .n{color:#ff6b6b}
+
+.plist{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0 0}
+.ptag{font-size:12px;background:var(--card2);border:1px solid var(--line2);border-radius:999px;padding:5px 11px;color:var(--tx2)}
+.ptag i{font-style:normal;color:var(--y);font-weight:700}
+
+/* ---------- ตัวช่วยนำทาง ---------- */
+#hud{position:fixed;z-index:20;right:16px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:9px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--line2);transition:background .25s,transform .25s}
+.dot.on{background:var(--y);transform:scale(1.45)}
+#bar{position:fixed;left:0;top:3px;height:3px;background:var(--y);z-index:61;width:0}
+#hint{
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:20;
+  color:var(--tx3);font-size:12.5px;letter-spacing:.1em;display:flex;align-items:center;gap:8px;transition:opacity .4s
+}
+#hint .ar{animation:bob 1.6s ease-in-out infinite;font-size:16px}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(5px)}}
+#topbar{position:fixed;left:16px;top:16px;z-index:20;display:flex;align-items:center;gap:10px}
+#topbar .mark{width:34px;height:34px;border-radius:9px;background:var(--y);color:#0a0a0b;
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
+#topbar b{font-size:14px}
+#topbar small{display:block;color:var(--tx3);font-size:10px;letter-spacing:.16em}
+
+/* ---------- DEBUG PANEL (?debug=1) ---------- */
+#dbg{
+  display:none;position:fixed;right:10px;bottom:26px;width:min(340px,92vw);max-height:42vh;overflow:auto;
+  background:#0b0d10;border:1px solid #2a323d;border-radius:10px;padding:11px 13px;z-index:90;
+  font:12px/1.6 ui-monospace,Menlo,Consolas,monospace;color:#9fb3c8;white-space:pre-wrap
+}
+#dbg.show{display:block}
+#dbg b{color:#ffd21e} #dbg .err{color:#ff6b6b}
+
+.spin{width:34px;height:34px;border:3px solid var(--line2);border-top-color:var(--y);border-radius:50%;
+  animation:sp .7s linear infinite;margin:0 auto 14px}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+@media(max-width:860px){
+  .sc{padding:74px 16px}
+  .sc.right{justify-content:flex-start}
+  .cap{max-width:100%;padding:18px 17px}
+  .cap h2{font-size:22px}
+  .big{font-size:36px}
+  #hud{right:9px;gap:8px}
+  .kbox .n{font-size:22px}
+}
+@media(prefers-reduced-motion:reduce){ #hint .ar{animation:none} }
+</style>
+</head>
+<body>
+
+<!-- ========== ด่านใส่รหัส ========== -->
+<div id="gate">
+  <div class="gatebox">
+    <div class="gatehead">
+      <div class="mark">SG</div>
+      <h1>เรื่องเล่าความปลอดภัย</h1>
+      <p>ตัวเลขทั้งหมดในเรื่องดึงสดจากฐานข้อมูลจริง<br>ใส่รหัสก่อนหนึ่งครั้ง แล้วส่งเครื่องให้ผู้ชมเลื่อนดูได้เลย</p>
+    </div>
+    <div class="tape-thin" style="border-radius:4px;margin-bottom:18px"></div>
+    <div class="gcard" id="gateCard"></div>
+  </div>
+</div>
+
+<!-- ========== เวที 3D + ฉาก ========== -->
+<canvas id="cv"></canvas>
+<div id="vig"></div>
+<div id="bar"></div>
+
+<div id="topbar" style="display:none">
+  <div class="mark">SG</div>
+  <div><b>SafeGear</b><small>PPE CONTROL</small></div>
+</div>
+<div id="hud" style="display:none"></div>
+<div id="hint" style="display:none"><span>เลื่อนลงเพื่อเริ่ม</span><span class="ar">↓</span></div>
+
+<div id="scenes"></div>
+<div id="dbg"></div>
+
+<script>
+/* ============================================================
+   1) CONFIG & CONSTANTS
+   ============================================================ */
+// ค่าเดียวกับ index.html · publishable key เปิดเผยได้ RLS ปิดตายทุกตาราง
+const SUPABASE_URL      = 'https://anlkrjjgnrqfjnuqzpbq.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_qODnRb1bg6s9iRXGCeuo3A_E61h-zXw';
+
+const TH_M = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+const SCENE_N = 5;                    // 5 ฉาก (ตาม A6: 3-5 ฉาก จบใน 1-2 นาที)
+const APP_URL = 'index.html';
+
+/* ============================================================
+   2) STATE  (ไม่ใช้ localStorage เลย — รหัสอยู่ในหน่วยความจำ ปิดแท็บ = ลืม)
+   ============================================================ */
+const state = {
+  phase:'gate',      // 'gate' | 'loading' | 'story'
+  pinLevel:null,     // 'issue' = เห็นเฉพาะตัวเลขคลัง · 'admin' = เห็นยอดเบิกด้วย
+  pinMsg:null, busy:false,
+  items:[], history:[],
+  p:0,               // ความคืบหน้าการเลื่อน 0..1
+  scene:0,           // ฉากปัจจุบัน (จำนวนเต็ม)
+  fps:0, tier:'-', pr:1, gl:false
+};
+let userPin = null, sb = null;
+
+/* ============================================================
+   3) DEBUG PANEL (?debug=1) — ห้ามลบจนกว่าเดย์จะสั่ง
+   ============================================================ */
+const DBG = new URLSearchParams(location.search).get('debug') === '1';
+const dbgEl = document.getElementById('dbg');
+const dbgLines = [];
+function dlog(tag, msg, isErr){
+  const t = new Date().toTimeString().slice(0,8);
+  dbgLines.unshift(`<div class="${isErr?'err':''}">[${t}] <b>${tag}</b> ${esc(String(msg))}</div>`);
+  if(dbgLines.length > 40) dbgLines.pop();
+  dbgRefresh();
+  if(isErr) console.error(tag, msg); else console.log(tag, msg);
+}
+function dbgRefresh(){
+  if(!DBG) return;
+  dbgEl.innerHTML =
+    `<div style="border-bottom:1px solid #2a323d;padding-bottom:7px;margin-bottom:7px">`
+    + `<b>DEBUG PANEL</b> · ?debug=1<br>`
+    + `phase: ${state.phase} · รหัส: ${state.pinLevel || 'ยังไม่ใส่'}<br>`
+    + `webgl: ${state.gl?'OK':'ไม่มี'} · tier: ${state.tier} · pixelRatio: ${state.pr}<br>`
+    + `<b>fps: ${state.fps}</b> · scene: ${state.scene+1}/${SCENE_N} · p: ${state.p.toFixed(3)}<br>`
+    + `items: ${state.items.length} · history: ${state.history.length}<br>`
+    + `three: ${typeof THREE !== 'undefined' ? THREE.REVISION : 'ไม่โหลด'}`
+    + `</div>` + dbgLines.join('');
+}
+if(DBG) dbgEl.classList.add('show');
+
+/* ============================================================
+   4) LOGIC — pure function ทั้งหมด ห้ามแตะ DOM (ทดสอบด้วย ?test=1)
+   ============================================================ */
+const $ = s => document.querySelector(s);
+function esc(v){
+  return String(v==null?'':v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function clamp(v,a,b){ return v < a ? a : (v > b ? b : v); }
+function lerp(a,b,t){ return a + (b-a)*t; }
+// นุ่มหัวนุ่มท้าย ใช้กับการเปลี่ยนฉากทุกครั้ง (เลื่อนแล้วภาพไม่กระชาก)
+function ease(t){ t = clamp(t,0,1); return t*t*(3-2*t); }
+function fmtN(n){ return (Number(n)||0).toLocaleString('th-TH'); }
+function fmtD(iso){
+  if(!iso) return '—';
+  const [y,m,d] = String(iso).slice(0,10).split('-').map(Number);
+  if(!y||!m||!d) return '—';
+  return d + ' ' + TH_M[m-1] + ' ' + y;
+}
+function todayISO(d){
+  const t = d || new Date();
+  return t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0');
+}
+// เหตุผลเดียวกับ index.html: Postgres เป็น UTC กะดึกจะถูกนับเป็นเมื่อวานถ้าไม่บวก 7 ชม.
+function dayKeyTH(ts){
+  if(!ts) return '';
+  const t = new Date(ts);
+  if(isNaN(t.getTime())) return String(ts).slice(0,10);
+  return new Date(t.getTime() + 7*3600*1000).toISOString().slice(0,10);
+}
+function recDay(r){ return r ? (dayKeyTH(r.created_at) || String(r.req_date||'').slice(0,10)) : ''; }
+function reqTotal(r){ return ((r&&r.lines)||[]).reduce((a,l) => a + (Number(l.qty)||0), 0); }
+function isLow(it){
+  if(!it) return false;
+  const st = Number(it.stock)||0, min = Number(it.min)||0;
+  return st <= 0 || st < min || st <= min*1.2;
+}
+// ฉากไหน + คืบหน้าภายในฉากเท่าไร (p = 0..1 ของทั้งเรื่อง)
+function sceneFloat(p, n){ return clamp(p,0,1) * ((n||SCENE_N) - 1); }
+// ความชัดของข้อความฉาก i — ชัดสุดตอนอยู่ตรงฉากพอดี จางลงเมื่อเลื่อนห่าง
+function capAlpha(sf, i){ return clamp(1 - Math.abs(sf - i) * 1.7, 0, 1); }
+
+// ตัวเลขทั้งหมดที่เอาไปเล่า — คำนวณจากข้อมูลจริงล้วน ไม่มีค่าสมมติ
+function storyStats(items, history, today){
+  const it = items || [], hs = history || [];
+  const low = it.filter(isLow);
+  const cats = [...new Set(it.map(x => x.cat).filter(Boolean))];
+  const todayQty = hs.filter(r => recDay(r) === today).reduce((a,r) => a + reqTotal(r), 0);
+  const ym = String(today||'').slice(0,7);
+  const monthQty = hs.filter(r => String(recDay(r)).slice(0,7) === ym).reduce((a,r) => a + reqTotal(r), 0);
+  return {
+    itemCount: it.length,
+    totalStock: it.reduce((a,x) => a + (Number(x.stock)||0), 0),
+    lowCount: low.length,
+    lowNames: low.map(x => x.name),
+    catCount: cats.length,
+    cats,
+    todayQty, monthQty,
+    reqCount: hs.length,
+    allQty: hs.reduce((a,r) => a + reqTotal(r), 0)
+  };
+}
+// เลือกระดับคุณภาพจากสเปคเครื่อง (A5: ภาพคมที่กระตุก ดูถูกกว่าภาพคมน้อยกว่าที่ลื่น)
+function pickTier(o){
+  const c = (o && o.cores) || 0, m = (o && o.mem) || 0, mob = !!(o && o.mobile), w = (o && o.w) || 1280;
+  if(mob && (c <= 4 || (m && m <= 3) || w <= 400)) return 'low';
+  if(mob || c <= 4 || (m && m <= 4)) return 'mid';
+  return 'high';
+}
+function tierConf(t){
+  if(t === 'low')  return { pr:1,    aa:false, seg:10, lights:2 };
+  if(t === 'mid')  return { pr:1.35, aa:false, seg:16, lights:2 };
+  return              { pr:1.8,  aa:true,  seg:24, lights:3 };
+}
+
+/* ---------- บทบรรยาย 5 ฉาก (ตัวเลขเสียบจากของจริง) ---------- */
+function scenes(st){
+  const tags = (st.cats||[]).slice(0,7).map(c => `<span class="ptag"><i>◆</i> ${esc(c)}</span>`).join('');
+  const lowLine = st.lowCount
+    ? `ตอนนี้มี <b style="color:#ff6b6b">${fmtN(st.lowCount)} รายการ</b> ที่แตะจุดต้องเติมแล้ว${
+        st.lowNames.length ? ' — ' + esc(st.lowNames.slice(0,3).join(', ')) + (st.lowNames.length>3?' และอื่นๆ':'') : ''}`
+    : `ตอนนี้ <b style="color:#2fbf5f">ยังไม่มีรายการไหนแตะจุดต้องเติม</b> — และเราตั้งใจให้มันเป็นแบบนี้ทุกวัน`;
+  const issueLine = st.reqCount
+    ? `จ่ายออกไปแล้ว <b>${fmtN(st.allQty)} ชิ้น</b> จาก <b>${fmtN(st.reqCount)} ใบเบิก</b> ทุกชิ้นรู้ว่าใครรับ วันไหน ใครจ่าย`
+    : `ทุกชิ้นที่จ่ายออกจะถูกบันทึกว่าใครรับ วันไหน ใครจ่าย — ย้อนดูได้ทั้งหมด`;
+
+  return [
+    { align:'center', html:
+      `<div class="eyebrow">SafeGear · เรื่องเล่าความปลอดภัย</div>
+       <h2 style="margin-top:10px">ทุกกะ มีคนเดินเข้าโรงงาน</h2>
+       <p>และทุกกะ ต้องมีคนเดินกลับบ้านครบเท่าเดิม</p>
+       <div class="tape-thin"></div>
+       <p style="margin-bottom:0">นั่นคืองานเดียวของเรา · เลื่อนลงเพื่อดูว่าอะไรทำให้มันเกิดขึ้นจริง</p>` },
+
+    { align:'left', html:
+      `<div class="eyebrow">สิ่งที่ยืนอยู่ตรงกลาง</div>
+       <h2 style="margin-top:10px">ของ ${fmtN(st.itemCount)} อย่าง<br>ระหว่างคนกับอันตราย</h2>
+       <p>ไม่ใช่โชค ไม่ใช่ความระมัดระวังอย่างเดียว — แต่เป็นอุปกรณ์ที่ต้องมี ต้องพอ และต้องอยู่ในสภาพใช้ได้</p>
+       <p style="margin-bottom:0">ครอบคลุมการป้องกัน <b>${fmtN(st.catCount)} ส่วนของร่างกาย</b></p>
+       <div class="plist">${tags}</div>` },
+
+    { align:'right', html:
+      `<div class="eyebrow">ความจริงที่ไม่มีใครอยากเจอ</div>
+       <h2 style="margin-top:10px">ของหมดวันไหน<br>วันนั้นมีคนต้องเสี่ยง</h2>
+       <p>คนหน้างานไม่ได้หยุดทำงานเพราะของหมด เขาจะทำต่อ — โดยไม่มีของ</p>
+       <p style="margin-bottom:0">${lowLine}</p>
+       ${st.lowCount ? `<p style="color:var(--tx3);font-size:12.5px;margin:12px 0 0">ชิ้นที่เรืองแดงคือของที่ต้องเติม</p>` : ''}` },
+
+    { align:'left', html:
+      `<div class="eyebrow">ระบบเข้ามาตรงนี้</div>
+       <h2 style="margin-top:10px">รู้ก่อนที่ของจะหมด</h2>
+       <p>คีย์ใบเบิกเสร็จใน 30 วินาที สต็อกตัดทันที เอกสารออกให้สโตร์เลย</p>
+       <p style="margin-bottom:0">${issueLine}</p>` },
+
+    { align:'center', html:
+      `<div class="eyebrow">ตัวเลขจริง ณ ${esc(fmtD(todayISO()))}</div>
+       <h2 style="margin:10px 0 4px">วันนี้เราอยู่ตรงไหน</h2>
+       <div class="kgrid">
+         <div class="kbox"><div class="n">${fmtN(st.totalStock)}</div><div class="l">ชิ้นพร้อมจ่ายในคลัง</div></div>
+         <div class="kbox"><div class="n">${fmtN(st.todayQty)}</div><div class="l">ชิ้นที่จ่ายออกวันนี้</div></div>
+         <div class="kbox"><div class="n">${fmtN(st.monthQty)}</div><div class="l">ชิ้นในเดือนนี้</div></div>
+         <div class="kbox ${st.lowCount?'dang':''}"><div class="n">${fmtN(st.lowCount)}</div><div class="l">รายการที่ต้องเติม</div></div>
+       </div>
+       <p style="margin:14px 0 0">ทุกตัวเลขนี้ดึงสดจากฐานข้อมูล ไม่ได้พิมพ์ไว้ล่วงหน้า</p>
+       <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px">
+         <a class="btn" href="${APP_URL}">เข้าระบบ SafeGear →</a>
+         <button class="btn ghost" data-act="top">↑ ดูใหม่อีกรอบ</button>
+       </div>` }
+  ];
+}
+
+/* ============================================================
+   5) DATA LAYER — Supabase (ใช้ RPC เดิมของระบบ ไม่มีของใหม่ใน DB)
+   ============================================================ */
+async function loadStory(){
+  const { data, error } = await sb.rpc('get_catalog', { p_pin: userPin });
+  if(error) throw error;
+  state.items = (data||[]).map(x => ({
+    id:x.id, name:x.name, cat:x.cat, color:x.color, unit:x.unit,
+    stock:x.stock, min:x.min_stock
+  }));
+  dlog('LOAD', `รายการ PPE ${state.items.length} รายการ`);
+  // ยอดเบิกอ่านได้เฉพาะรหัสแม่ · ถือรหัสเบิกก็ยังดูเรื่องได้ แค่ไม่มีตัวเลขฝั่งจ่ายออก
+  if(state.pinLevel === 'admin'){
+    const h = await sb.rpc('admin_get_history', { p_pin: userPin, p_limit: 1000 });
+    if(h.error) throw h.error;
+    state.history = h.data || [];
+    dlog('LOAD', `ประวัติใบเบิก ${state.history.length} ใบ`);
+  }
+}
+
+/* ============================================================
+   6) เวที 3D — โมเดล PPE 7 ตัวสร้างด้วยโค้ดล้วน ไม่โหลดไฟล์ภายนอก
+   ============================================================ */
+let renderer, scene3, camera, stage, models = [], conf = tierConf('high');
+let animOn = false, lastT = 0, frames = 0, fpsT = 0, scrollP = 0, shownP = 0;
+
+function mat(color, rough){
+  return new THREE.MeshStandardMaterial({
+    color:new THREE.Color(color), roughness: rough==null?0.55:rough, metalness:0.15
+  });
+}
+const DARK = '#23262c', STRAP = '#3a3d45';
+
+/* ---- โมเดลแต่ละตัว: คืน THREE.Group · seg = ความละเอียดตามระดับเครื่อง ---- */
+function mHelmet(c, seg){
+  const g = new THREE.Group();
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(1, seg, Math.max(6,seg/2), 0, Math.PI*2, 0, Math.PI/2), mat(c,.4));
+  const brim  = new THREE.Mesh(new THREE.CylinderGeometry(1.32, 1.32, .1, seg), mat(c,.45));
+  brim.position.y = .03;
+  const ridge = new THREE.Mesh(new THREE.BoxGeometry(.16, .34, 1.9), mat(c,.35));
+  ridge.position.y = .82;
+  g.add(shell, brim, ridge);
+  return g;
+}
+function mGlasses(c, seg){
+  const g = new THREE.Group();
+  const lens = new THREE.MeshStandardMaterial({ color:new THREE.Color(c), roughness:.15, metalness:.35,
+    transparent:true, opacity:.85 });
+  const L = new THREE.Mesh(new THREE.SphereGeometry(.52, seg, Math.max(6,seg/2)), lens);
+  L.scale.set(1, .72, .45); L.position.x = -.56;
+  const R = L.clone(); R.position.x = .56;
+  const bridge = new THREE.Mesh(new THREE.BoxGeometry(.5, .12, .16), mat(DARK,.4));
+  const armL = new THREE.Mesh(new THREE.BoxGeometry(.1, .1, 1.25), mat(DARK,.4));
+  armL.position.set(-1.02, .06, -.6);
+  const armR = armL.clone(); armR.position.x = 1.02;
+  g.add(L, R, bridge, armL, armR);
+  return g;
+}
+function mGloves(c, seg){
+  const g = new THREE.Group();
+  // สัดส่วนต้องเป็น "ฝ่ามือกว้าง + นิ้วชัด" ไม่งั้นดูเป็นแท่งสี่เหลี่ยม (แก้จากภาพจริงรอบแรก)
+  const palm = new THREE.Mesh(new THREE.BoxGeometry(1.05, 1.05, .36), mat(c,.75));
+  g.add(palm);
+  const fs = Math.max(6, Math.round(seg/3));
+  for(let i=0;i<4;i++){
+    const len = i === 1 ? .86 : (i === 2 ? .8 : .68);      // นิ้วยาวไม่เท่ากันเหมือนมือจริง
+    const f = new THREE.Mesh(new THREE.CylinderGeometry(.135, .125, len, fs), mat(c,.75));
+    f.position.set(-.37 + i*.25, .52 + len/2, 0);
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(.132, fs, Math.max(5,fs/2)), mat(c,.75));
+    tip.position.set(f.position.x, f.position.y + len/2, 0);
+    g.add(f, tip);
+  }
+  const th = new THREE.Mesh(new THREE.CylinderGeometry(.16, .15, .62, fs), mat(c,.75));
+  th.position.set(-.62, .18, .06); th.rotation.z = Math.PI/3;
+  const cuff = new THREE.Mesh(new THREE.CylinderGeometry(.44, .48, .34, seg), mat(DARK,.7));
+  cuff.position.y = -.68;
+  g.add(th, cuff);
+  return g;
+}
+function mEarmuff(c, seg){
+  const g = new THREE.Group();
+  const band = new THREE.Mesh(new THREE.TorusGeometry(.95, .11, Math.max(6,seg/3), seg, Math.PI), mat(DARK,.6));
+  band.position.y = .1;
+  const cupL = new THREE.Mesh(new THREE.CylinderGeometry(.45, .5, .5, seg), mat(c,.5));
+  cupL.rotation.z = Math.PI/2; cupL.position.set(-.98, .05, 0);
+  const cupR = cupL.clone(); cupR.position.x = .98;
+  g.add(band, cupL, cupR);
+  return g;
+}
+function mMask(c, seg){
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(.85, seg, Math.max(6,seg/2)), mat(c,.85));
+  body.scale.set(1, .78, .62);
+  const valve = new THREE.Mesh(new THREE.CylinderGeometry(.2, .22, .18, Math.max(8,seg/2)), mat(DARK,.5));
+  valve.rotation.x = Math.PI/2; valve.position.set(0, -.08, .52);
+  const s1 = new THREE.Mesh(new THREE.TorusGeometry(.62, .035, 6, Math.max(10,seg)), mat(STRAP,.8));
+  s1.position.set(0,.3,-.2); s1.rotation.y = Math.PI/2; s1.scale.set(1,.7,1);
+  const s2 = s1.clone(); s2.position.y = -.28;
+  g.add(body, valve, s1, s2);
+  return g;
+}
+function mBoots(c, seg){
+  const g = new THREE.Group();
+  const foot = new THREE.Mesh(new THREE.BoxGeometry(.72, .5, 1.5), mat(c,.55));
+  foot.position.set(0, -.35, .22);
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(.72, 1.05, .7), mat(c,.55));
+  shaft.position.set(0, .3, -.28);
+  const sole = new THREE.Mesh(new THREE.BoxGeometry(.8, .18, 1.62), mat(DARK,.9));
+  sole.position.set(0, -.65, .2);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(.36, Math.max(8,seg/2), Math.max(6,seg/3)), mat('#8d939c',.3));
+  cap.scale.set(1,.7,.9); cap.position.set(0,-.3,.86);
+  g.add(foot, shaft, sole, cap);
+  return g;
+}
+function mVest(c, seg){
+  const g = new THREE.Group();
+  // ตัวกว้างและบาง + แถบสะท้อนแสงพาดรอบ = อ่านออกว่าเป็นเสื้อกั๊กแม้ตอนหมุนด้านข้าง
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.55, 1.6, .5), mat(c,.8));
+  const refl = new THREE.MeshStandardMaterial({ color:new THREE.Color('#e9edf2'), roughness:.22, metalness:.55 });
+  const band = (y) => {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(1.6, .19, .56), refl);
+    b.position.set(0, y, 0); return b;
+  };
+  // แถบแนวตั้งหน้าอก 2 เส้น ให้เห็นว่าเป็นด้านหน้า
+  const v1 = new THREE.Mesh(new THREE.BoxGeometry(.16, 1.62, .1), refl); v1.position.set(-.42, 0, .28);
+  const v2 = v1.clone(); v2.position.x = .42;
+  const shL = new THREE.Mesh(new THREE.BoxGeometry(.34, .24, .54), mat(c,.8)); shL.position.set(-.6,.9,0);
+  const shR = shL.clone(); shR.position.x = .6;
+  g.add(body, band(.34), band(-.26), v1, v2, shL, shR);
+  return g;
+}
+const BUILDERS = { helmet:mHelmet, glasses:mGlasses, gloves:mGloves, earmuff:mEarmuff, mask:mMask, boots:mBoots, vest:mVest };
+// มุมชดเชยประจำชิ้น: หันด้านที่ "จำได้ทันที" เข้ากล้อง
+// (ที่ครอบหูถ้าหันด้านข้างจะเห็นเป็นวงกลมเดียว · รองเท้าต้องเห็นด้านข้างถึงจะรู้ว่าเป็นรองเท้า)
+const FACE = { helmet:0, glasses:-.15, gloves:-.25, earmuff:-.3, mask:-.1, boots:-1.75, vest:-.3 };
+
+/* ---- ตำแหน่งของแต่ละชิ้นในแต่ละฉาก (lerp ระหว่างฉาก = ภาพขยับตามการเลื่อน) ----
+   ⚠️ ต้องแยกผังตามสัดส่วนจอ: แถวยาว/กริด 4 คอลัมน์ที่พอดีจอคอม จะตกขอบจอทันที
+      บนมือถือแนวตั้ง (ar ~0.5) เพราะความกว้างที่มองเห็น = ความสูง × aspect
+   ar = camera.aspect · portrait เมื่อ ar < 1.1                                   */
+function layout(sceneIdx, i, n, low, ar){
+  const port = (ar == null ? 1.6 : ar) < 1.1;
+  const a = (i / Math.max(1,n)) * Math.PI * 2;
+  switch(sceneIdx){
+    case 0: // ฉาก 1 — ชิ้นแรกเด่นเต็มครึ่งบนของจอ ที่เหลือซ่อนอยู่หลังฉาก
+      return i === 0
+        ? { p:[0, 1.15, 0],  r:[0, .35, 0], s: port ? 1.15 : 1.45 }
+        : { p:[Math.cos(a)*1.2, -1.2, -7], r:[0, a, 0], s:.001 };
+
+    case 1: // ฉาก 2 — กางให้เห็นครบทั้ง 7 ชิ้นพร้อมกัน
+      if(port){                                   // มือถือ: 2 คอลัมน์เรียงลง
+        const col = i % 2, row = Math.floor(i / 2);
+        return { p:[(col - .5) * 1.85, 2.35 - row * 1.6, 0], r:[0, .35, 0], s:.58 };
+      }{  // จอกว้าง: กลุ่ม 2 แถวสลับระดับ ชิดขวาให้พ้นการ์ด
+          // (แถวยาว 7 ชิ้นเรียงเดี่ยวกว้างเกินจอ ชิ้นริมตกขอบ — ทดสอบแล้วใช้ไม่ได้)
+        const col = i % 4, row = Math.floor(i / 4);
+        const inRow = Math.min(4, n - row*4);            // แถวสุดท้ายมี 3 ชิ้น -> จัดกึ่งกลาง ไม่ให้ชิดซ้าย
+        const off = (4 - inRow) / 2;
+        return { p:[(col + off - 1.5) * 1.5 + 1.6, (row === 0 ? .95 : -.8) + (col % 2 ? .16 : -.16),
+                    -Math.abs(col - 1.5) * .35], r:[0, .3, 0], s:.62 };
+      }
+
+    case 2: { // ฉาก 3 — ชิ้นที่ใกล้หมดลอยเด่นขึ้นมา ที่เหลือจมลงและเล็กลง
+      // ⚠️ วงต้องถอยหลัง (cz) ไม่งั้นชิ้นครึ่งหน้าของวงเข้ามาใกล้กล้องจนล้นจอ (เจอจากภาพจริง)
+      const R  = port ? 1.6 : 2.0;
+      const cx = port ? 0 : -1.0;          // การ์ดฉากนี้อยู่ขวา -> ดันภาพไปซ้าย
+      const cz = port ? -2.2 : -3.0;
+      return low
+        ? { p:[Math.cos(a)*R*.85 + cx, .6 + Math.sin(i*1.3)*.25, Math.sin(a)*R*.85 + cz], r:[0, -a, 0], s: port ? .72 : .95 }
+        : { p:[Math.cos(a)*R*1.3 + cx, -1.45, Math.sin(a)*R*1.3 + cz], r:[.25, -a, 0], s: port ? .38 : .5 };
+    }
+
+    case 3: { // ฉาก 4 — จัดเป็นตารางระเบียบ (ภาพแทน "ระบบเข้ามาจัดการ")
+      const cols = port ? 2 : 4;
+      const col = i % cols, row = Math.floor(i / cols);
+      return port
+        ? { p:[(col - .5) * 1.75, 2.15 - row * 1.45, 0], r:[0, .3, 0], s:.52 }
+        : { p:[(col - 1.5) * 1.85, .72 - row * 1.7, 0], r:[0, .3, 0], s:.72 };
+    }
+
+    default: { // ฉาก 5 — ถอยไปเป็นฉากหลังให้ตัวเลขเด่น
+      // จอแคบ: วงต้องเล็กกว่าครึ่งความกว้างที่มองเห็น (~2.1 หน่วย) ไม่งั้นชิ้นข้างตกขอบ
+      const R = port ? 1.45 : 4.1;   // ต้องเผื่อ stage.rotation ที่หมุนวงทั้งวงอีกชั้นด้วย
+      return { p:[Math.cos(a)*R, Math.sin(i*2.1)*.7, Math.sin(a)*R - 1], r:[0, -a, 0], s: port ? .46 : .66 };
+    }
+  }
+}
+// p[0] = เยื้องกล้องซ้าย/ขวา เพื่อดันโมเดลไปอยู่ฝั่งตรงข้ามการ์ดข้อความ
+// (ฉาก 2,4 การ์ดอยู่ซ้าย -> กล้องเยื้องซ้าย ภาพเลยไปกองขวา · ฉาก 3 กลับด้าน)
+const CAM = [
+  { p:[0,    1.15, 6.1], look:[0,    1.05, 0] },
+  { p:[0,    .15,  7.4], look:[0,    .05,  0] },
+  { p:[1.5,  .4,   6.4], look:[1.5,  .15,  0] },
+  { p:[-1.5, -.3,  6.9], look:[-1.5, -.35, 0] },
+  { p:[0,    .2,   7.8], look:[0,    0,   -1] }
+];
+// จอแคบ: การ์ดกินเต็มความกว้างอยู่แล้ว จึงไม่เยื้อง แต่ต้องถอยกล้องออกกันชิ้นริมโดนตัด
+function camZ(z, ar){ return z * ((ar == null ? 1.6 : ar) < 1.1 ? 1.18 : 1); }
+function camX(x, ar){ return (ar == null ? 1.6 : ar) < 1.1 ? 0 : x; }
+
+function initGL(){
+  const cv = document.getElementById('cv');
+  try{
+    renderer = new THREE.WebGLRenderer({ canvas:cv, antialias:conf.aa, alpha:false, powerPreference:'high-performance' });
+  }catch(ex){ dlog('GL', 'สร้าง WebGL ไม่ได้: ' + ex.message, true); return false; }
+  if(!renderer) return false;
+  state.gl = true;
+  renderer.setClearColor(0x0a0a0b, 1);
+  applyPR(Math.min(window.devicePixelRatio || 1, conf.pr));
+
+  scene3 = new THREE.Scene();
+  scene3.fog = new THREE.Fog(0x0a0a0b, 9, 20);
+  camera = new THREE.PerspectiveCamera(46, innerWidth/innerHeight, .1, 60);
+  camera.position.set(0, 1.15, 6.1);
+
+  // แสงเยอะพอให้ชิ้นสีเข้ม (แว่น รองเท้า) ไม่จมหายไปกับพื้นดำ — วัดจากภาพจริงแล้วต้องเท่านี้
+  scene3.add(new THREE.AmbientLight(0xffffff, .72));
+  const key = new THREE.DirectionalLight(0xffd21e, 1.2); key.position.set(3, 4.5, 5); scene3.add(key);
+  const fill = new THREE.DirectionalLight(0x9fc0ff, .6); fill.position.set(-4.5, 0, 3); scene3.add(fill);
+  if(conf.lights > 2){
+    const rim = new THREE.PointLight(0xffffff, .5, 22); rim.position.set(0, 3, -6); scene3.add(rim);
+  }
+
+  stage = new THREE.Group();
+  scene3.add(stage);
+  buildModels();
+  addEventListener('resize', onResize, { passive:true });
+  return true;
+}
+function applyPR(pr){
+  state.pr = Math.round(pr*100)/100;
+  renderer.setPixelRatio(pr);
+  renderer.setSize(innerWidth, innerHeight, false);
+}
+function onResize(){
+  if(!renderer) return;
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight, false);
+}
+function buildModels(){
+  models.forEach(m => stage.remove(m.g));
+  models = [];
+  const list = state.items.length ? state.items : [];
+  list.forEach((it, i) => {
+    const build = BUILDERS[it.id] || BUILDERS[String(it.model||'').toLowerCase()] || mHelmet;
+    const g = build(it.color || '#ffd21e', conf.seg);
+    g.userData.face = FACE[it.id] != null ? FACE[it.id] : 0;
+    g.userData.sw   = .42 + (i % 3) * .06;   // ความเร็วแกว่ง ต่างกันเล็กน้อยไม่ให้ขยับพร้อมกันเป็นแถว
+    g.userData.ph   = i * .9;                // เฟสเริ่มต้น
+    stage.add(g);
+    const low = isLow(it), mats = [];
+    if(low){
+      // เก็บ material ไว้เร่งแสงเรืองแดงตอนเข้าฉาก 3 (material ไม่ได้แชร์ข้ามโมเดล จึงตั้งแยกชิ้นได้)
+      g.traverse(o => { if(o.material){ o.material.emissive = new THREE.Color(0xe02424); o.material.emissiveIntensity = 0; mats.push(o.material); } });
+    }
+    models.push({ g, it, low, mats });
+  });
+  dlog('3D', `สร้างโมเดล ${models.length} ตัว (seg ${conf.seg})`);
+}
+
+function tick(t){
+  if(!animOn) return;
+  requestAnimationFrame(tick);
+  const dt = Math.min((t - lastT) / 1000, .05);
+  lastT = t;
+
+  // นับ fps จริงทุก 1 วินาที + ลดความละเอียดอัตโนมัติถ้าเครื่องตามไม่ทัน (A5)
+  frames++; fpsT += dt;
+  if(fpsT >= 1){
+    state.fps = Math.round(frames / fpsT);
+    if(state.fps < 26 && state.pr > 1){ applyPR(1); dlog('PERF', `fps ${state.fps} → ลด pixelRatio เป็น 1`); }
+    frames = 0; fpsT = 0; dbgRefresh();
+  }
+
+  // หน่วงการเลื่อนให้ภาพไหลตามนิ้ว ไม่กระตุกตามค่า scroll ดิบ
+  shownP = lerp(shownP, scrollP, 1 - Math.pow(.0016, dt));
+  const sf = sceneFloat(shownP, SCENE_N);
+  const i0 = Math.min(Math.floor(sf), SCENE_N-1), i1 = Math.min(i0+1, SCENE_N-1);
+  const k  = ease(sf - i0);
+
+  const ar = camera.aspect;
+  models.forEach((m, i) => {
+    const A = layout(i0, i, models.length, m.low, ar), B = layout(i1, i, models.length, m.low, ar);
+    m.g.position.set(lerp(A.p[0],B.p[0],k), lerp(A.p[1],B.p[1],k), lerp(A.p[2],B.p[2],k));
+    m.g.rotation.x = lerp(A.r[0],B.r[0],k);
+    m.g.rotation.z = lerp(A.r[2],B.r[2],k);
+    // แกว่ง ±22° รอบมุมนำเสนอ แทนการหมุนรอบตัว — เห็นมิติแต่ยังจำได้ว่าเป็นอะไรตลอดเวลา
+    m.g.rotation.y = lerp(A.r[1],B.r[1],k) + m.g.userData.face
+                   + Math.sin(t/1000 * m.g.userData.sw + m.g.userData.ph) * .38;
+    const s = lerp(A.s,B.s,k); m.g.scale.set(s,s,s);
+    // ของที่ต้องเติมเรืองแดงเฉพาะช่วงฉาก 3 (ฉากที่พูดเรื่องของหมด) แล้วจางหายไปเอง
+    if(m.mats.length){
+      const glow = clamp(1 - Math.abs(sf - 2), 0, 1) * .5;
+      for(let q=0;q<m.mats.length;q++) m.mats[q].emissiveIntensity = glow;
+    }
+  });
+
+  const c0 = CAM[i0], c1 = CAM[i1];
+  camera.position.set(camX(lerp(c0.p[0],c1.p[0],k), ar), lerp(c0.p[1],c1.p[1],k), camZ(lerp(c0.p[2],c1.p[2],k), ar));
+  camera.lookAt(camX(lerp(c0.look[0],c1.look[0],k), ar), lerp(c0.look[1],c1.look[1],k), lerp(c0.look[2],c1.look[2],k));
+  stage.rotation.y = shownP * .55;
+
+  renderer.render(scene3, camera);
+}
+function startAnim(){ if(animOn) return; animOn = true; lastT = performance.now(); requestAnimationFrame(tick); }
+function stopAnim(){ animOn = false; }
+// แท็บถูกซ่อน = หยุดวาดทันที (ไม่กินแบตและไม่ทำเครื่องร้อนขณะพับไว้)
+// ⚠️ ต้อง reset animOn ก่อนเรียก startAnim เสมอ — ถ้าหน้าถูกโหลดตอนแท็บซ่อนอยู่
+//    เบราว์เซอร์จะไม่เรียก rAF เลย แต่ animOn ยังเป็น true ค้าง → กลับมาแล้วภาพค้างถาวร
+document.addEventListener('visibilitychange', () => {
+  if(document.hidden){ stopAnim(); return; }
+  if(state.phase === 'story'){ animOn = false; startAnim(); }
+});
+
+/* ============================================================
+   7) RENDER (DOM) + EVENTS + INIT
+   ============================================================ */
+function renderGate(){
+  const msg = state.pinMsg
+    ? `<div class="pill badge-dang" style="margin:0 0 14px;white-space:normal;display:flex">${esc(state.pinMsg)}</div>` : '';
+  $('#gateCard').innerHTML = state.phase === 'loading'
+    ? `<div style="text-align:center;padding:16px 0"><div class="spin"></div>กำลังดึงตัวเลขจากฐานข้อมูล…</div>`
+    : `${msg}
+       <label style="display:block;margin-bottom:16px"><span style="display:block;font-size:13px;color:var(--tx2);margin-bottom:7px">รหัสผู้ดูแล หรือ รหัสเบิกของ</span>
+         <input class="inp" type="password" id="pinInput" placeholder="••••••••" autocomplete="off"></label>
+       <button class="btn" style="width:100%" data-act="pin" ${state.busy?'disabled':''}>
+         ${state.busy ? 'กำลังตรวจรหัส…' : 'เริ่มเรื่องเล่า'}</button>
+       <p style="color:var(--tx3);font-size:12.5px;margin:15px 0 0;line-height:1.7">
+         <b style="color:var(--tx2)">รหัสผู้ดูแล</b> — เห็นตัวเลขครบรวมยอดจ่ายออก<br>
+         <b style="color:var(--tx2)">รหัสเบิกของ</b> — เห็นเฉพาะตัวเลขคลัง<br>
+         รหัสอยู่ในหน่วยความจำเท่านั้น ปิดหน้าเว็บ = ลืม</p>
+       <a href="${APP_URL}" style="display:inline-block;margin-top:14px;font-size:13px">← กลับหน้าระบบเบิกจ่าย</a>`;
+  dbgRefresh();
+}
+
+function buildStory(){
+  const st = storyStats(state.items, state.history, todayISO());
+  const list = scenes(st);
+  $('#scenes').innerHTML = list.map((s,i) =>
+    `<section class="sc ${s.align === 'center' ? 'center' : (s.align === 'right' ? 'right' : '')} ${i===0?'low':''}">
+       <div class="cap">${s.html}</div></section>`).join('');
+  $('#hud').innerHTML = list.map((_,i) => `<div class="dot ${i===0?'on':''}"></div>`).join('');
+  $('#gate').style.display = 'none';
+  $('#topbar').style.display = 'flex';
+  $('#hud').style.display = 'flex';
+  $('#hint').style.display = 'flex';
+  state.phase = 'story';
+  dlog('STORY', `สร้าง ${list.length} ฉาก · สต็อกรวม ${st.totalStock} ชิ้น · ต้องเติม ${st.lowCount} รายการ`);
+  onScroll();
+  paintCaps();
+}
+
+const caps = () => document.querySelectorAll('.cap');
+function paintCaps(){
+  const sf = sceneFloat(scrollP, SCENE_N);
+  caps().forEach((el, i) => {
+    const a = capAlpha(sf, i);
+    el.style.opacity = a;
+    el.style.transform = `translateY(${(1-a) * 26}px)`;
+  });
+  const cur = Math.round(sf);
+  if(cur !== state.scene){
+    state.scene = cur;
+    document.querySelectorAll('.dot').forEach((d,i) => d.classList.toggle('on', i === cur));
+  }
+  $('#bar').style.width = (scrollP*100).toFixed(1) + '%';
+  $('#hint').style.opacity = scrollP > .02 ? 0 : 1;
+}
+function onScroll(){
+  const max = document.documentElement.scrollHeight - innerHeight;
+  scrollP = max > 0 ? clamp(scrollY / max, 0, 1) : 0;
+  state.p = scrollP;
+  paintCaps();
+  dbgRefresh();
+}
+addEventListener('scroll', onScroll, { passive:true });
+addEventListener('resize', onScroll, { passive:true });
+
+document.addEventListener('click', async (e) => {
+  const el = e.target.closest('[data-act]');
+  if(!el || el.disabled) return;
+
+  if(el.dataset.act === 'top'){ scrollTo({ top:0, behavior:'smooth' }); }
+
+  else if(el.dataset.act === 'pin'){
+    const pin = ($('#pinInput')||{}).value || '';
+    if(!pin.trim()){ state.pinMsg = 'กรุณากรอกรหัส'; renderGate(); return; }
+    state.busy = true; state.pinMsg = null; renderGate();
+    try{
+      const { data, error } = await sb.rpc('verify_pin', { p_pin: pin });
+      if(error) throw error;
+      if(!(data && data.ok)){
+        state.busy = false; state.pinMsg = 'รหัสไม่ถูกต้อง'; dlog('PIN','รหัสไม่ถูกต้อง',true); renderGate(); return;
+      }
+      userPin = pin; state.pinLevel = data.level; state.busy = false;
+      dlog('PIN', 'ผ่านด้วยรหัสระดับ ' + data.level);
+      state.phase = 'loading'; renderGate();
+      await loadStory();
+      buildModels();
+      buildStory();
+      startAnim();
+    }catch(ex){
+      state.busy = false; state.phase = 'gate';
+      state.pinMsg = ex.message || 'เชื่อมฐานข้อมูลไม่สำเร็จ';
+      dlog('ERROR', state.pinMsg, true);
+      renderGate();
+    }
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if(e.key === 'Enter' && e.target.id === 'pinInput'){
+    const b = document.querySelector('[data-act="pin"]'); if(b) b.click();
+  }
+});
+
+function start(){
+  const nav = navigator;
+  const tier = pickTier({
+    cores: nav.hardwareConcurrency || 0,
+    mem: nav.deviceMemory || 0,
+    mobile: /Android|iPhone|iPad|iPod|Mobile/i.test(nav.userAgent),
+    w: innerWidth
+  });
+  state.tier = tier; conf = tierConf(tier);
+  dlog('BOOT', `ระดับคุณภาพ: ${tier} (pr≤${conf.pr}, aa ${conf.aa?'on':'off'}, seg ${conf.seg})`);
+
+  if(typeof THREE === 'undefined'){
+    dlog('BOOT', 'โหลด Three.js ไม่สำเร็จ — เรื่องเล่าจะแสดงเป็นข้อความอย่างเดียว', true);
+  }else if(!initGL()){
+    dlog('BOOT', 'เครื่องนี้ใช้ WebGL ไม่ได้ — เรื่องเล่าจะแสดงเป็นข้อความอย่างเดียว', true);
+  }
+
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  renderGate();
+}
+
+/* ============================================================
+   8) TEST SUITE (?test=1) — เฉพาะ logic ที่ไม่แตะ DOM/WebGL
+   ============================================================ */
+const tests = [];
+function test(n, fn){ tests.push({n, fn}); }
+function assertEq(a, b, m){
+  if(JSON.stringify(a) !== JSON.stringify(b)) throw new Error(m || `${JSON.stringify(a)} != ${JSON.stringify(b)}`);
+}
+const TI = [
+  {id:'helmet', name:'หมวกนิรภัย', cat:'ป้องกันศีรษะ', stock:14, min:10},
+  {id:'mask',   name:'หน้ากาก N95', cat:'ทางเดินหายใจ', stock:64, min:100},
+  {id:'boots',  name:'รองเท้าเซฟตี้', cat:'ป้องกันเท้า', stock:0,  min:10},
+  {id:'vest',   name:'เสื้อสะท้อนแสง', cat:'ป้องกันลำตัว', stock:22, min:15}
+];
+const TH = [
+  {id:'R1', created_at:'2026-07-19T02:00:00Z', lines:[{item_id:'helmet',name:'หมวก',qty:2}]},
+  {id:'R2', created_at:'2026-07-18T23:30:00Z', lines:[{item_id:'mask',name:'หน้ากาก',qty:5}]},  // ไทยคือวันที่ 19
+  {id:'R3', created_at:'2026-06-10T05:00:00Z', lines:[{item_id:'boots',name:'รองเท้า',qty:3}]}
+];
+
+test('clamp ในช่วง', () => assertEq(clamp(.5,0,1), .5));
+test('clamp เกินขอบบน', () => assertEq(clamp(9,0,1), 1));
+test('clamp ต่ำกว่าขอบล่าง', () => assertEq(clamp(-9,0,1), 0));
+test('lerp กึ่งกลาง', () => assertEq(lerp(0,10,.5), 5));
+test('lerp ปลายทาง', () => assertEq(lerp(2,8,1), 8));
+test('ease ที่ 0', () => assertEq(ease(0), 0));
+test('ease ที่ 1', () => assertEq(ease(1), 1));
+test('ease กึ่งกลาง', () => assertEq(ease(.5), .5));
+test('ease รับค่านอกช่วง', () => assertEq(ease(2), 1));
+
+test('sceneFloat ต้นเรื่อง', () => assertEq(sceneFloat(0,5), 0));
+test('sceneFloat ท้ายเรื่อง = ฉากสุดท้าย', () => assertEq(sceneFloat(1,5), 4));
+test('sceneFloat กึ่งกลาง', () => assertEq(sceneFloat(.5,5), 2));
+test('capAlpha ตรงฉากพอดี = ชัดเต็ม', () => assertEq(capAlpha(2,2), 1));
+test('capAlpha ห่าง 1 ฉาก = จางหมด', () => assertEq(capAlpha(3,2), 0));
+test('capAlpha ไม่ติดลบ', () => assertEq(capAlpha(0,4), 0));
+
+test('isLow ของหมด', () => assertEq(isLow({stock:0,min:10}), true));
+test('isLow ต่ำกว่าขั้นต่ำ', () => assertEq(isLow({stock:6,min:10}), true));
+test('isLow ที่ขอบ min*1.2', () => assertEq(isLow({stock:12,min:10}), true));
+test('isLow ปกติ', () => assertEq(isLow({stock:14,min:10}), false));
+test('isLow รับ null', () => assertEq(isLow(null), false));
+
+test('dayKeyTH บวก 7 ชม. ข้ามวัน', () => assertEq(dayKeyTH('2026-07-18T23:30:00Z'), '2026-07-19'));
+test('dayKeyTH ไม่ข้ามวันเมื่อยังไม่ถึง', () => assertEq(dayKeyTH('2026-07-18T09:00:00Z'), '2026-07-18'));
+test('dayKeyTH รับค่าว่าง', () => assertEq(dayKeyTH(null), ''));
+test('reqTotal รวมจำนวน', () => assertEq(reqTotal(TH[0]), 2));
+test('reqTotal ใบว่าง', () => assertEq(reqTotal({lines:[]}), 0));
+
+test('storyStats นับสต็อกรวม', () => assertEq(storyStats(TI,TH,'2026-07-19').totalStock, 100));
+test('storyStats นับรายการที่ต้องเติม', () => assertEq(storyStats(TI,TH,'2026-07-19').lowCount, 2));
+test('storyStats นับหมวดการป้องกัน', () => assertEq(storyStats(TI,TH,'2026-07-19').catCount, 4));
+test('storyStats ยอดวันนี้รวมเคสข้ามวัน UTC', () => assertEq(storyStats(TI,TH,'2026-07-19').todayQty, 7));
+test('storyStats ยอดเดือนนี้', () => assertEq(storyStats(TI,TH,'2026-07-19').monthQty, 7));
+test('storyStats ยอดสะสมทั้งหมด', () => assertEq(storyStats(TI,TH,'2026-07-19').allQty, 10));
+test('storyStats ไม่มีข้อมูลเลย', () => {
+  const s = storyStats([],[],'2026-07-19');
+  assertEq([s.itemCount,s.totalStock,s.lowCount,s.todayQty,s.reqCount], [0,0,0,0,0]);
+});
+test('storyStats รับ null ทั้งคู่', () => assertEq(storyStats(null,null,'2026-07-19').itemCount, 0));
+
+test('pickTier มือถือแรงน้อย = low', () => assertEq(pickTier({cores:4,mem:2,mobile:true,w:390}), 'low'));
+test('pickTier มือถือแรง = mid', () => assertEq(pickTier({cores:8,mem:6,mobile:true,w:430}), 'mid'));
+test('pickTier คอมแรง = high', () => assertEq(pickTier({cores:12,mem:16,mobile:false,w:1920}), 'high'));
+// เบราว์เซอร์ที่ไม่ยอมบอกสเปค (Safari ไม่มี deviceMemory) ต้องตกไป mid ไม่ใช่ high
+// ตามหลัก A5: ภาพคมที่กระตุก ดูถูกกว่าภาพคมน้อยกว่าที่ลื่น
+test('pickTier ไม่รู้สเปคเลย = mid (ปลอดภัยไว้ก่อน)', () => assertEq(pickTier({}), 'mid'));
+test('pickTier รู้แค่ว่าคอมแรง เมมไม่บอก = high', () => assertEq(pickTier({cores:12,mobile:false,w:1920}), 'high'));
+test('tierConf low ปิด antialias', () => assertEq(tierConf('low').aa, false));
+test('tierConf high เปิด antialias', () => assertEq(tierConf('high').aa, true));
+test('tierConf low ละเอียดน้อยกว่า high', () => assertEq(tierConf('low').seg < tierConf('high').seg, true));
+
+// ผัง 3D: ต้องกางไม่เท่ากันระหว่างจอกว้างกับมือถือแนวตั้ง ไม่งั้นชิ้นริมตกขอบจอ
+// การ์ดฉาก 2 กินพื้นที่จอซ้ายถึงราว world x = -2.3 (คำนวณจาก fov 46° ที่ระยะกล้อง 7.4)
+// ทุกชิ้นจึงต้องอยู่ขวาของเส้นนั้นพร้อมระยะเผื่อ
+test('layout ฉาก 2 จอกว้างต้องพ้นเขตการ์ดทุกชิ้น', () => {
+  const xs = [0,1,2,3,4,5,6].map(i => layout(1, i, 7, false, 2.2).p[0]);
+  assertEq(Math.min.apply(null, xs) > -1.5, true);
+});
+test('layout ฉาก 2 จอกว้างกางกว้างกว่าจอแคบ', () => {
+  const w = i => layout(1, i, 7, false, 2.2).p[0], p = i => layout(1, i, 7, false, .5).p[0];
+  const spanW = Math.max(w(0),w(3)) - Math.min(w(0),w(3));
+  const spanP = Math.max(p(0),p(3)) - Math.min(p(0),p(3));
+  assertEq(spanW > spanP, true);
+});
+test('layout ฉาก 2 มือถือกางแนวตั้งแทน', () => {
+  const L = layout(1, 6, 7, false, .5);       // แนวตั้ง: x ต้องแคบ แต่ y ต้องต่างกัน
+  assertEq(Math.abs(L.p[0]) < 1.2, true);
+});
+test('layout ฉาก 4 มือถือใช้ 2 คอลัมน์', () => {
+  const a = layout(3, 0, 7, false, .5), b = layout(3, 2, 7, false, .5);
+  assertEq(a.p[0] === b.p[0] && a.p[1] > b.p[1], true);   // คอลัมน์เดียวกัน คนละแถว
+});
+test('layout ฉาก 3 ชิ้นใกล้หมดใหญ่กว่าชิ้นปกติ', () => {
+  assertEq(layout(2,1,7,true,1.6).s > layout(2,1,7,false,1.6).s, true);
+});
+test('layout ฉาก 1 โชว์ชิ้นแรกชิ้นเดียว', () => {
+  assertEq(layout(0,0,7,false,1.6).s > 1 && layout(0,3,7,false,1.6).s < .01, true);
+});
+test('layout ไม่ส่ง ar มาก็ยังทำงาน', () => assertEq(typeof layout(1,0,7,false).s, 'number'));
+test('camZ ถอยกล้องเฉพาะจอแคบ', () => {
+  assertEq(camZ(10,.5) > 10 && camZ(10,2.2) === 10, true);
+});
+test('camX เยื้องเฉพาะจอกว้าง จอแคบต้องอยู่กลาง', () => {
+  assertEq([camX(-1.5,.5), camX(-1.5,2.2)], [0, -1.5]);
+});
+
+test('scenes ได้ 5 ฉากเสมอ', () => assertEq(scenes(storyStats(TI,TH,'2026-07-19')).length, 5));
+test('scenes ใส่ตัวเลขจริงลงบท', () => {
+  const s = scenes(storyStats(TI,TH,'2026-07-19'));
+  assertEq(s[4].html.indexOf('100') > -1, true);   // สต็อกรวม 100 ชิ้นต้องโผล่ในฉากสุดท้าย
+});
+test('scenes ไม่มีข้อมูลก็ยังสร้างครบ', () => assertEq(scenes(storyStats([],[],'2026-07-19')).length, 5));
+
+test('fmtN ใส่ตัวคั่นหลักพัน', () => assertEq(fmtN(12345), '12,345'));
+test('fmtN รับ null', () => assertEq(fmtN(null), '0'));
+test('fmtD แปลงวันไทย', () => assertEq(fmtD('2026-07-19'), '19 ก.ค. 2026'));
+test('fmtD รับค่าว่าง', () => assertEq(fmtD(''), '—'));
+test('esc กัน XSS', () => assertEq(esc('<b>x</b>'), '&lt;b&gt;x&lt;/b&gt;'));
+
+function runTests(){
+  let pass = 0; const fails = [];
+  tests.forEach(t => { try{ t.fn(); pass++; }catch(ex){ fails.push(t.n + ' → ' + ex.message); } });
+  const ok = fails.length === 0;
+  document.body.innerHTML = `<div style="padding:32px;font-family:Kanit,sans-serif;color:#eceded">
+    <div style="font-size:24px;font-weight:800;color:${ok?'#2fbf5f':'#e02424'};margin-bottom:8px">
+      ${ok?'✓ ผ่านทั้งหมด':'✗ มีที่ไม่ผ่าน'} ${pass}/${tests.length}</div>
+    ${fails.map(f => `<div style="color:#ff6b6b;font-size:14px;margin:6px 0">✗ ${esc(f)}</div>`).join('')}
+    <div style="color:#6b6e77;font-size:13px;margin-top:18px">เอา ?test=1 ออกจาก URL เพื่อกลับไปหน้าเรื่องเล่า</div></div>`;
+}
+
+if(new URLSearchParams(location.search).get('test') === '1') runTests();
+else start();
+</script>
+</body>
+</html>

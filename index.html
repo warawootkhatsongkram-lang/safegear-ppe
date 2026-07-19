@@ -1,0 +1,1912 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SafeGear · ระบบเบิกจ่าย PPE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Chart.js สำหรับกราฟแดชบอร์ด (ไลบรารีเดียวที่เพิ่มในโปรเจค ตาม A2) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+/* ============================================================
+   ธีม SAFETY TAPE — ดำ + เหลืองจราจร
+   ============================================================ */
+:root{
+  --bg:#0a0a0b; --bg2:#121216; --card:#17181c; --card2:#1e1f24;
+  --line:#2a2c33; --line2:#3a3d45;
+  --y:#ffd21e; --y2:#e0b500; --y-dim:#8a7410;
+  --red:#e02424; --green:#2fbf5f; --orange:#f0851a;
+  --tx:#eceded; --tx2:#9a9da5; --tx3:#6b6e77;
+  --tape:repeating-linear-gradient(45deg,#ffd21e 0 18px,#0a0a0b 18px 36px);
+  --r:14px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--tx);
+  font-family:'Kanit',system-ui,sans-serif; font-size:16px; line-height:1.55;
+  background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.014) 0 2px,transparent 2px 9px);
+  min-height:100vh; overflow-x:hidden;
+}
+/* เส้นแดงขอบจอบน-ล่าง (ตามภาพตัวอย่าง) */
+body::before,body::after{
+  content:'';position:fixed;left:0;right:0;height:3px;background:var(--red);z-index:60;pointer-events:none
+}
+body::before{top:0} body::after{bottom:0}
+
+button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none}
+h1,h2,h3,h4{margin:0;font-weight:700;letter-spacing:-.01em}
+a{color:var(--y)}
+
+/* ---------- ชิ้นส่วนธีม ---------- */
+.tape{height:14px;background:var(--tape);border-top:1px solid #0a0a0b;border-bottom:1px solid #0a0a0b}
+.tape-thin{height:8px;background:var(--tape)}
+
+.card{
+  background:var(--card); border:1px solid var(--line); border-left:4px solid var(--y);
+  border-radius:var(--r); padding:18px 20px; position:relative
+}
+.card.plain{border-left-color:var(--line2)}
+.card.danger{border-left-color:var(--red)}
+
+.eyebrow{font-size:11px;letter-spacing:.28em;color:var(--tx3);font-weight:600;text-transform:uppercase}
+.bignum{font-size:34px;font-weight:800;color:var(--y);line-height:1.05;letter-spacing:-.02em}
+.unit-lbl{font-size:11px;letter-spacing:.2em;color:var(--tx3);font-weight:500}
+
+.btn{
+  background:var(--y); color:#0a0a0b; font-weight:700; border-radius:11px;
+  padding:13px 22px; min-height:48px; display:inline-flex; align-items:center; justify-content:center;
+  gap:8px; transition:transform .08s, background .15s; white-space:nowrap
+}
+.btn:active{transform:scale(.97)}
+.btn:disabled{background:#3a3d45;color:var(--tx3);cursor:default}
+.btn.ghost{background:transparent;border:1.5px solid var(--line2);color:var(--tx)}
+.btn.ghost:active{background:var(--card2)}
+.btn.danger{background:var(--red);color:#fff}
+.btn.sm{padding:10px 16px;min-height:44px;font-size:14px;border-radius:9px}
+
+.inp{
+  width:100%; background:var(--bg2); border:1.5px solid var(--line); border-radius:11px;
+  padding:13px 15px; min-height:48px; color:var(--tx); outline:none; transition:border-color .15s
+}
+.inp:focus{border-color:var(--y)}
+.inp::placeholder{color:var(--tx3)}
+label.fld{display:block;margin-bottom:16px}
+label.fld > span{display:block;font-size:13px;color:var(--tx2);margin-bottom:7px;font-weight:500}
+
+.pill{
+  display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+  padding:5px 11px;border-radius:999px;white-space:nowrap
+}
+.badge-warn{background:rgba(240,133,26,.15);color:var(--orange)}
+.badge-dang{background:rgba(224,36,36,.15);color:#ff6b6b}
+.badge-ok{background:rgba(47,191,95,.13);color:var(--green)}
+
+/* ---------- โครงหน้า ---------- */
+#app{display:flex;min-height:100vh}
+#side{
+  width:236px;flex:none;background:var(--bg2);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;position:sticky;top:0;height:100vh;padding-top:3px
+}
+.brand{display:flex;align-items:center;gap:12px;padding:22px 20px 18px}
+.brand .mark{
+  width:44px;height:44px;border-radius:12px;background:var(--y);flex:none;
+  display:flex;align-items:center;justify-content:center;font-weight:800;color:#0a0a0b;font-size:19px
+}
+.brand b{display:block;font-size:17px;font-weight:700;letter-spacing:-.01em}
+.brand small{color:var(--tx3);font-size:11px;letter-spacing:.16em;text-transform:uppercase}
+
+nav{padding:14px 12px;flex:1;display:flex;flex-direction:column;gap:4px}
+.navbtn{
+  display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border-radius:11px;
+  color:var(--tx2);font-weight:500;font-size:15px;text-align:left;transition:background .15s,color .15s;min-height:48px
+}
+.navbtn.on{background:rgba(255,210,30,.11);color:var(--y);font-weight:600}
+.navbtn:not(.on):active{background:var(--card2)}
+.navbtn .ic{width:20px;flex:none;text-align:center;font-size:17px}
+.navbtn .soon{margin-left:auto;font-size:9px;letter-spacing:.1em;color:var(--tx3);border:1px solid var(--line2);padding:2px 6px;border-radius:5px}
+
+.side-foot{padding:14px;border-top:1px solid var(--line)}
+.who{display:flex;align-items:center;gap:11px;margin-bottom:11px}
+.who .av{width:38px;height:38px;border-radius:10px;background:var(--card2);border:1px solid var(--line2);
+  display:flex;align-items:center;justify-content:center;color:var(--y);font-weight:700;flex:none;font-size:14px}
+.who b{font-size:13px;font-weight:600;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px}
+.who small{color:var(--tx3);font-size:11px}
+
+#main{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{padding:26px 30px 0;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.topbar h1{font-size:27px;font-weight:800;letter-spacing:-.02em}
+.topbar p{margin:5px 0 0;color:var(--tx2);font-size:14px}
+.datepill{
+  display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);
+  border-radius:999px;padding:8px 15px;font-size:13px;font-weight:500;white-space:nowrap
+}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(47,191,95,.18)}
+#view{padding:22px 30px 60px;flex:1}
+
+/* ---------- แถบเมนูล่างสำหรับมือถือ ---------- */
+#mnav{display:none}
+
+/* ---------- flow เบิก ---------- */
+.steps{display:flex;gap:8px;margin-bottom:22px;flex-wrap:wrap}
+.step{
+  flex:1;min-width:120px;background:var(--card);border:1px solid var(--line);border-radius:11px;
+  padding:11px 14px;display:flex;align-items:center;gap:10px;opacity:.5;transition:opacity .2s
+}
+.step.on{opacity:1;border-color:var(--y);background:rgba(255,210,30,.07)}
+.step.done{opacity:1}
+.step .n{
+  width:25px;height:25px;border-radius:7px;background:var(--card2);color:var(--tx2);flex:none;
+  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700
+}
+.step.on .n{background:var(--y);color:#0a0a0b}
+.step.done .n{background:rgba(47,191,95,.2);color:var(--green)}
+.step span{font-size:13px;font-weight:500}
+
+.grid-items{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:13px}
+.item{
+  background:var(--card);border:1px solid var(--line);border-left:4px solid var(--line2);
+  border-radius:var(--r);padding:15px 16px;transition:border-color .15s,background .15s;text-align:left;width:100%
+}
+.item.picked{border-left-color:var(--y);background:rgba(255,210,30,.06);border-color:rgba(255,210,30,.35)}
+.item .top{display:flex;align-items:flex-start;gap:11px;margin-bottom:11px}
+.item .sw{width:32px;height:32px;border-radius:9px;flex:none;border:1px solid rgba(255,255,255,.1)}
+.item h4{font-size:15px;font-weight:600;margin-bottom:2px}
+.item .cat{font-size:11px;color:var(--tx3)}
+.item .foot{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.stocknum{font-size:20px;font-weight:800;color:var(--y)}
+.stocknum.low{color:var(--orange)} .stocknum.out{color:var(--red)}
+.qty{display:flex;align-items:center;gap:9px}
+/* 44px = ขนาดต่ำสุดที่นิ้วกดถูกโดยไม่ต้องซูม (คนหน้างานใส่ถุงมือ) */
+.qbtn{
+  width:44px;height:44px;border-radius:10px;background:var(--card2);border:1px solid var(--line2);
+  color:var(--tx);font-size:20px;font-weight:700;display:flex;align-items:center;justify-content:center
+}
+.qbtn:active{background:var(--y);color:#0a0a0b}
+.qnum{min-width:34px;text-align:center;font-size:17px;font-weight:700}
+
+.cartbar{
+  position:sticky;bottom:0;background:var(--bg2);border-top:2px solid var(--y);
+  padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px;
+  margin:24px -30px -60px;flex-wrap:wrap;z-index:20
+}
+
+table.tb{width:100%;border-collapse:collapse}
+table.tb th{
+  text-align:left;font-size:11px;letter-spacing:.14em;color:var(--tx3);font-weight:600;
+  text-transform:uppercase;padding:10px 12px;border-bottom:1px solid var(--line)
+}
+table.tb td{padding:13px 12px;border-bottom:1px solid var(--line);font-size:14px}
+table.tb tr:last-child td{border-bottom:0}
+table.tb td.num{text-align:right;font-weight:700;color:var(--y);font-variant-numeric:tabular-nums}
+.tbwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+/* ---------- หน้าล็อกอิน ---------- */
+#gate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.gatebox{width:100%;max-width:430px}
+.gatehead{text-align:center;margin-bottom:26px}
+.gatehead .mark{
+  width:66px;height:66px;border-radius:17px;background:var(--y);margin:0 auto 16px;
+  display:flex;align-items:center;justify-content:center;font-size:29px;font-weight:800;color:#0a0a0b
+}
+.gatehead h1{font-size:26px;font-weight:800;letter-spacing:-.02em}
+.gatehead p{color:var(--tx2);font-size:14px;margin:7px 0 0}
+
+/* ---------- เอกสารเบิกจ่าย ---------- */
+#doc{background:#fff;color:#111;border-radius:12px;padding:30px 34px;max-width:820px;margin:0 auto}
+#doc .dhead{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;border-bottom:3px solid #111;padding-bottom:14px;margin-bottom:6px}
+#doc .dtape{height:9px;background:repeating-linear-gradient(45deg,#ffd21e 0 12px,#111 12px 24px);margin-bottom:18px}
+#doc h2{font-size:22px;font-weight:800;letter-spacing:-.01em}
+#doc .sub{font-size:12px;color:#555;letter-spacing:.16em;text-transform:uppercase;font-weight:600}
+#doc .meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+#doc .meta div{font-size:13px}
+#doc .meta b{display:block;font-size:10px;letter-spacing:.14em;color:#666;text-transform:uppercase;font-weight:700;margin-bottom:3px}
+#doc table{width:100%;border-collapse:collapse;margin-bottom:22px}
+#doc th{background:#111;color:#fff;font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:9px 11px;text-align:left}
+#doc td{padding:10px 11px;border-bottom:1px solid #ddd;font-size:14px}
+#doc td.n{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+#doc tfoot td{border-top:2px solid #111;border-bottom:0;font-weight:700;padding-top:12px}
+#doc .signs{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:36px}
+#doc .sign{text-align:center}
+#doc .sign .ln{border-bottom:1px dotted #666;height:44px;margin-bottom:7px}
+#doc .sign small{font-size:12px;color:#444}
+#doc .note{font-size:13px;color:#444;border-left:3px solid #ffd21e;padding:7px 12px;margin-bottom:20px;background:#fffbe9}
+
+/* ---------- modal ---------- */
+#overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(3px);z-index:70;
+  display:none;align-items:center;justify-content:center;padding:20px
+}
+#overlay.show{display:flex}
+.modal{background:var(--card);border:1px solid var(--line2);border-radius:16px;padding:24px;width:100%;max-width:420px}
+
+/* ---------- DEBUG PANEL (?debug=1) ---------- */
+#dbg{
+  display:none;position:fixed;right:10px;bottom:26px;width:min(360px,92vw);max-height:44vh;overflow:auto;
+  background:#0b0d10;border:1px solid #2a323d;border-radius:10px;padding:11px 13px;
+  font:12px/1.6 ui-monospace,Menlo,Consolas,monospace;color:#9fb3c8;z-index:90;white-space:pre-wrap
+}
+#dbg.show{display:block}
+#dbg b{color:#ffd21e} #dbg .err{color:#ff6b6b}
+
+.empty{text-align:center;padding:52px 20px;color:var(--tx3)}
+.empty .ic{font-size:40px;margin-bottom:12px;opacity:.5}
+.spin{width:34px;height:34px;border:3px solid var(--line2);border-top-color:var(--y);border-radius:50%;
+  animation:sp .7s linear infinite;margin:0 auto 14px}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* ---------- แดชบอร์ด / คลัง / ประวัติ (เฟส 2) ---------- */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-bottom:18px}
+.kpi{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--y);border-radius:var(--r);padding:14px 16px}
+.kpi.warn{border-left-color:var(--orange)} .kpi.dang{border-left-color:var(--red)} .kpi.plain{border-left-color:var(--line2)}
+.kpi .bignum{font-size:29px}
+.kpi.warn .bignum{color:var(--orange)} .kpi.dang .bignum{color:#ff6b6b}
+.kpi .cap{font-size:12px;color:var(--tx2);margin-top:2px}
+
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;margin-bottom:16px}
+.panel > .eyebrow{margin-bottom:4px}
+.panel h3{font-size:17px;margin-bottom:12px}
+/* กราฟต้องมีความสูงตายตัว ไม่งั้น Chart.js ยืดจนล้นจอมือถือ */
+.chartbox{position:relative;height:300px}
+.chartbox.tall{height:340px}
+
+.filterbar{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.sel{background:var(--bg2);border:1.5px solid var(--line);border-radius:10px;padding:11px 13px;min-height:44px;color:var(--tx);outline:none}
+.sel:focus{border-color:var(--y)}
+.srch{flex:1;min-width:180px}
+
+.alertrow{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
+.alertrow:last-child{border-bottom:0}
+.alertrow .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.mv{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.mv:last-child{border-bottom:0}
+.mv .d{font-weight:700;font-variant-numeric:tabular-nums;min-width:52px;text-align:right}
+.mv .d.plus{color:var(--green)} .mv .d.minus{color:#ff6b6b}
+.mv .when{color:var(--tx3);font-size:12px;white-space:nowrap}
+
+/* ---------- มือถือ ---------- */
+@media(max-width:860px){
+  #side{display:none}
+  #view{padding:18px 16px 96px}
+  .topbar{padding:20px 16px 0}
+  .topbar h1{font-size:22px}
+  .cartbar{margin:20px -16px 0;position:fixed;left:0;right:0;bottom:64px;border-radius:0}
+  #mnav{
+    display:flex;position:fixed;left:0;right:0;bottom:0;height:64px;background:var(--bg2);
+    border-top:1px solid var(--line);z-index:50;padding-bottom:env(safe-area-inset-bottom)
+  }
+  .mnavbtn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    color:var(--tx3);font-size:10px;font-weight:500}
+  .mnavbtn.on{color:var(--y)}
+  .mnavbtn .ic{font-size:19px}
+  .grid-items{grid-template-columns:1fr 1fr;gap:10px}
+  .item{padding:12px 13px}
+  #doc{padding:20px 18px;border-radius:0;margin:0 -16px}
+  /* กราฟบนมือถือ: เตี้ยลงแต่ยังอ่านออก ไม่ใช่ย่อกราฟจอใหญ่มาใส่ (A9) */
+  .chartbox{height:250px} .chartbox.tall{height:300px}
+  .panel{padding:14px 14px}
+  .kpis{grid-template-columns:1fr 1fr;gap:9px}
+  .kpi{padding:12px 13px} .kpi .bignum{font-size:25px}
+}
+@media(max-width:400px){ .grid-items{grid-template-columns:1fr} }
+
+/* ---------- พิมพ์ A4 ---------- */
+@media print{
+  @page{size:A4;margin:14mm}
+  body{background:#fff!important;color:#000;background-image:none}
+  body::before,body::after{display:none}
+  #side,#mnav,#dbg,.noprint,.topbar,.cartbar{display:none!important}
+  #app{display:block}
+  #view{padding:0}
+  #doc{max-width:100%;padding:0;border-radius:0;margin:0}
+  #doc .dtape{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  #doc th{background:#111!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  #doc .note{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style>
+</head>
+<body>
+
+<!-- ========== หน้าล็อกอิน ========== -->
+<div id="gate" style="display:none">
+  <div class="gatebox">
+    <div class="gatehead">
+      <div class="mark">SG</div>
+      <h1>SafeGear</h1>
+      <p>ระบบเบิกจ่าย PPE · สำหรับเจ้าหน้าที่ความปลอดภัย</p>
+    </div>
+    <div class="tape-thin" style="border-radius:4px;margin-bottom:20px"></div>
+    <div class="card" id="gateCard"></div>
+  </div>
+</div>
+
+<!-- ========== ระบบหลัก ========== -->
+<div id="app" style="display:none">
+  <aside id="side">
+    <div class="brand">
+      <div class="mark">SG</div>
+      <div><b>SafeGear</b><small>PPE Control</small></div>
+    </div>
+    <div class="tape-thin"></div>
+    <nav id="nav"></nav>
+    <div class="side-foot">
+      <div class="who">
+        <div class="av" id="avatar">👷</div>
+        <div><b id="whoName">—</b><small id="whoRole">—</small></div>
+      </div>
+      <a class="btn ghost sm" style="width:100%;margin-bottom:8px;text-decoration:none" href="story.html">🎬 เรื่องเล่าความปลอดภัย</a>
+      <button class="btn ghost sm" style="width:100%" id="adminBtn" data-act="askPin">🔒 เข้าโหมดผู้ดูแล</button>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div class="topbar noprint">
+      <div><h1 id="pageTitle">—</h1><p id="pageSub">—</p></div>
+      <div class="datepill"><span class="dot" id="statusDot"></span><span id="todayTxt">—</span></div>
+    </div>
+    <div id="view"></div>
+  </main>
+
+  <nav id="mnav"></nav>
+</div>
+
+<div id="overlay"><div class="modal" id="modalBox"></div></div>
+<div id="dbg"></div>
+
+<script>
+/* ============================================================
+   1) CONFIG — เดย์แก้ 2 บรรทัดนี้หลังรัน schema ใน Supabase
+   ============================================================ */
+// โปรเจค safegear-ppe · Singapore (ap-southeast-1) · ตั้งค่า 19 ก.ค. 2569
+// key ตัวนี้เป็น publishable key เปิดเผยได้โดยตั้งใจ — RLS ปิดตายทุกตาราง
+// คนที่ไม่ล็อกอินถือ key นี้ไปก็อ่านอะไรไม่ได้สักแถว
+const SUPABASE_URL      = 'https://anlkrjjgnrqfjnuqzpbq.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_qODnRb1bg6s9iRXGCeuo3A_E61h-zXw';
+
+const TH_M = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+const TODAY = new Date();
+const APPROVER_DEFAULT = 'จป.วิชาชีพ';
+
+// TABS: [ชื่อ, คำอธิบาย, ไอคอน, ระดับรหัสที่ต้องใช้]
+//   'open'  = ไม่ต้องใส่รหัสเลย (เดย์สั่ง 19 ก.ค. 2569 — แดชบอร์ดต้องดูได้ทันที)
+//   'issue' = รหัสเบิก หรือ รหัสแม่ ก็เข้าได้
+//   'admin' = รหัสแม่เท่านั้น
+const TABS = {
+  req:     ['เบิก–จ่าย PPE','คีย์ใบเบิกและรับของ','📋','issue'],
+  dash:    ['แดชบอร์ด','สรุปยอดเบิกและกราฟ','📊','open'],
+  stock:   ['คลัง PPE','สต็อก วันหมดอายุ รอบเปลี่ยน','📦','admin'],
+  history: ['ประวัติการเบิก','ย้อนดูและพิมพ์เอกสารซ้ำ','🕘','admin']
+};
+// ผู้ถือรหัสระดับ level เข้าแท็บที่ต้องการ need ได้ไหม
+function canAccess(need, level){
+  if(need === 'open') return true;          // แดชบอร์ดเปิดให้ทุกคน
+  if(!level) return false;
+  if(level === 'admin') return true;        // รหัสแม่ผ่านได้ทุกที่
+  return need === 'issue';                  // รหัสเบิกเข้าได้แค่หน้าเบิก
+}
+
+/* ============================================================
+   2) STATE
+   ============================================================ */
+const state = {
+  ready:false, loading:true, busy:false, err:null,
+  tab:'dash',                // เปิดมาเจอแดชบอร์ดก่อน เพราะดูได้เลยไม่ต้องใส่รหัส
+  items:[], cart:{},         // cart = { itemId: qty }
+  reqStep:1, person:'', note:'',
+  slip:null,                 // ใบเบิกที่เพิ่งคีย์เสร็จ -> เอกสาร
+  pinMsg:null,               // ข้อความแจ้งผลตอนกรอกรหัส
+  pinLevel:null,             // null = ยังไม่ใส่รหัส · 'issue' = รหัสเบิก · 'admin' = รหัสแม่
+  // ---- เฟส 2 ----
+  dash:null,                 // ตัวเลขแดชบอร์ดจาก get_dashboard (ไม่ต้องใช้รหัส)
+  history:[],                // ใบเบิกทั้งหมด (admin_get_history) ใช้กับหน้าประวัติ
+  moves:[],                  // audit trail สต็อก (admin_get_movements)
+  month:null,                // เดือนที่กรองในกราฟ 2 เช่น '2026-07'
+  hq:'',                     // คำค้นในหน้าประวัติ
+  adjust:null,               // { itemId, delta, reason, note, err } = modal ปรับยอด
+  edit:null,                 // { form, isNew, err, confirmHide } = modal จัดการรายการ PPE (เฟส 4)
+  p2loaded:false             // โหลดข้อมูลฝั่ง admin แล้วหรือยัง
+};
+// รหัสเก็บในหน่วยความจำเท่านั้น รีเฟรช = ลืม (ไม่เขียนลง localStorage เด็ดขาด)
+// ต้องเก็บตัวรหัสไว้เพราะ RPC ทุกตัวต้องส่งรหัสไปให้ Postgres ตรวจซ้ำทุกครั้ง
+let userPin = null;
+let sb = null;
+
+/* ============================================================
+   3) DEBUG PANEL (?debug=1) — ห้ามลบจนกว่าเดย์จะสั่ง
+   ============================================================ */
+const DBG = new URLSearchParams(location.search).get('debug') === '1';
+const dbgEl = document.getElementById('dbg');
+const dbgLines = [];
+function dlog(tag, msg, isErr){
+  const t = new Date().toTimeString().slice(0,8);
+  dbgLines.unshift(`<div class="${isErr?'err':''}">[${t}] <b>${tag}</b> ${esc(String(msg))}</div>`);
+  if(dbgLines.length > 60) dbgLines.pop();
+  dbgRefresh();
+  if(isErr) console.error(tag, msg); else console.log(tag, msg);
+}
+function dbgSummary(){
+  return `<div style="border-bottom:1px solid #2a323d;padding-bottom:7px;margin-bottom:7px">`
+    + `<b>DEBUG PANEL</b> · ?debug=1<br>`
+    + `cfg: ${configured()?'OK':'ยังไม่ตั้งค่า'} · รหัส: ${state.pinLevel || 'ยังไม่ใส่'}<br>`
+    + `items: ${state.items.length} · cart: ${Object.keys(state.cart).length} (${cartQty()} ชิ้น)<br>`
+    + `tab: ${state.tab} · step: ${state.reqStep} · slip: ${state.slip ? esc(state.slip.id) : '—'}<br>`
+    + `dash: ${state.dash ? ((state.dash.daily||[]).length + ' วัน · ' + (state.dash.req_count||0) + ' ใบ') : 'ยังไม่โหลด'}<br>`
+    + `hist: ${state.history.length} ใบ · moves: ${state.moves.length} · month: ${state.month || '—'} · chart: ${typeof Chart !== 'undefined' ? 'OK' : 'ไม่โหลด'}<br>`
+    + `loading: ${state.loading} · busy: ${state.busy} · err: ${state.err ? esc(state.err) : '—'}`
+    + `</div>`;
+}
+function dbgRefresh(){ if(DBG) dbgEl.innerHTML = dbgSummary() + dbgLines.join(''); }
+if(DBG) dbgEl.classList.add('show');
+
+/* ============================================================
+   4) LOGIC — pure function ทั้งหมด ห้ามแตะ DOM (ทดสอบได้ด้วย ?test=1)
+   ============================================================ */
+const $ = s => document.querySelector(s);
+function esc(v){
+  return String(v==null?'':v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function configured(){
+  return SUPABASE_URL.indexOf('PUT_YOUR') === -1 && SUPABASE_ANON_KEY.indexOf('PUT_YOUR') === -1;
+}
+function fmtD(iso){
+  if(!iso) return '—';
+  const [y,m,d] = String(iso).slice(0,10).split('-').map(Number);
+  if(!y||!m||!d) return '—';
+  return d + ' ' + TH_M[m-1] + ' ' + y;
+}
+function fmtM(ym){
+  if(!ym) return '—';
+  const [y,m] = String(ym).split('-').map(Number);
+  if(!y||!m) return '—';
+  return TH_M[m-1] + ' ' + y;
+}
+function todayISO(d){
+  const t = d || new Date();
+  return t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0');
+}
+// สถานะสต็อก: ต่ำกว่าขั้นต่ำ / ใกล้หมด (ไม่เกิน min*1.2) / ปกติ
+function statusOf(it){
+  if(!it) return ['—','plain'];
+  const min = Number(it.min)||0, st = Number(it.stock)||0;
+  if(st <= 0)        return ['หมด','badge-dang'];
+  if(st < min)       return ['ต่ำกว่าขั้นต่ำ','badge-dang'];
+  if(st <= min*1.2)  return ['ใกล้หมด','badge-warn'];
+  return ['ปกติ','badge-ok'];
+}
+function cartQty(){
+  return Object.values(state.cart).reduce((a,b) => a + (Number(b)||0), 0);
+}
+function cartArr(){
+  return Object.keys(state.cart).map(id => {
+    const it = state.items.find(i => i.id === id);
+    if(!it) return null;
+    return { id, name:it.name, unit:it.unit, color:it.color, qty:state.cart[id], stock:it.stock };
+  }).filter(Boolean);
+}
+// ตรวจว่าคีย์ใบเบิกได้หรือยัง — คืน error ข้อความไทย หรือ null ถ้าผ่าน
+function validateReq(person, cart, items){
+  if(!person || !String(person).trim()) return 'กรุณาระบุชื่อผู้เบิก';
+  const ids = Object.keys(cart || {});
+  if(!ids.length) return 'ยังไม่ได้เลือกรายการ';
+  for(const id of ids){
+    const q = Number(cart[id]);
+    if(!q || q <= 0) return 'จำนวนต้องมากกว่า 0';
+    const it = (items||[]).find(i => i.id === id);
+    if(!it) return 'ไม่พบรายการ ' + id;
+    if(q > it.stock) return `สต็อก "${it.name}" ไม่พอ (เหลือ ${it.stock} ${it.unit})`;
+  }
+  return null;
+}
+
+/* ---------- เฟส 4: จัดการรายการ PPE (pure ทั้งหมด ทดสอบด้วย ?test=1) ---------- */
+// โมเดล 3D ที่ story.html วาดได้จริง (คีย์ของ BUILDERS ในไฟล์นั้น)
+// เลือกนอกลิสต์นี้ story จะวาดเป็นหมวกนิรภัยแทน — หน้าเบิก/คลังไม่กระทบ
+const MODELS = [['helmet','หมวกนิรภัย'],['glasses','แว่นตา'],['earmuff','ที่ครอบหู'],
+                ['mask','หน้ากาก'],['gloves','ถุงมือ'],['vest','เสื้อกั๊ก'],['boots','รองเท้า']];
+
+// รายการในหน้าจอ -> ฟอร์ม (ชื่อคีย์ตรงกับที่ admin_upsert_item ต้องการเป๊ะๆ)
+// ส่ง null = ฟอร์มเปล่าสำหรับรายการใหม่
+function itemToForm(it){
+  if(!it) return { id:'', name:'', cat:'', model:'helmet', color:'#2f6fed', unit:'ชิ้น',
+                   min_stock:'0', target:'0', expiry:'', cycle_m:'12', last_replaced:'', sort_order:'0' };
+  return { id:it.id, name:it.name, cat:it.cat, model:it.model, color:it.color, unit:it.unit,
+           min_stock:String(it.min), target:String(it.target), expiry:it.expiry||'',
+           cycle_m:String(it.cycle), last_replaced:it.last||'',
+           sort_order:String(it.sort==null?0:it.sort) };
+}
+
+// ตรวจฟอร์มรายการ PPE — คืนข้อความไทย หรือ null ถ้าผ่าน
+// isNew=true จะกันรหัสซ้ำด้วย (ตอนแก้ไขไม่ต้องกัน เพราะรหัสตัวเองย่อมซ้ำกับตัวเอง)
+function validateItem(f, items, isNew){
+  const g  = k => String((f && f[k]) == null ? '' : f[k]).trim();
+  const id = g('id');
+  if(!id) return 'กรุณาระบุรหัสรายการ';
+  if(!/^[a-z0-9_-]+$/.test(id)) return 'รหัสรายการใช้ได้เฉพาะ a-z 0-9 _ - (พิมพ์เล็ก ห้ามเว้นวรรค ห้ามภาษาไทย)';
+  if(isNew && (items||[]).some(i => i.id === id)) return `รหัส "${id}" มีอยู่แล้ว กรุณาใช้รหัสอื่น`;
+  if(!g('name')) return 'กรุณาระบุชื่อรายการ';
+  if(!g('cat'))  return 'กรุณาระบุหมวดการป้องกัน';
+  if(!g('unit')) return 'กรุณาระบุหน่วยนับ';
+  if(!/^#[0-9a-fA-F]{6}$/.test(g('color'))) return 'สีต้องเป็นรหัส HEX 6 หลัก เช่น #2f6fed';
+  for(const [k,lbl] of [['min_stock','ขั้นต่ำ'],['target','ยอดเป้าหมาย'],['cycle_m','รอบเปลี่ยน'],['sort_order','ลำดับ']]){
+    const n = Number(g(k));
+    if(g(k) === '' || !Number.isInteger(n) || n < 0) return `${lbl} ต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป`;
+  }
+  // วันที่ในตารางนี้เก็บเป็น 'YYYY-MM' แบบ ค.ศ. (ตาม seed เดิม) เว้นว่างได้
+  for(const [k,lbl] of [['expiry','วันหมดอายุ'],['last_replaced','เปลี่ยนล่าสุด']]){
+    if(g(k) && !/^\d{4}-(0[1-9]|1[0-2])$/.test(g(k))) return `${lbl} ต้องเป็นรูปแบบ ปีค.ศ.-เดือน เช่น 2027-06`;
+  }
+  return null;
+}
+
+/* ---------- เฟส 2: สรุปยอด (pure ทั้งหมด ทดสอบด้วย ?test=1) ---------- */
+const EXPIRY_WARN_M = 3;   // เตือน "ใกล้หมดอายุ" ล่วงหน้า 3 เดือน (เดย์เลือกเอง 19 ก.ค. 2569)
+
+// ⚠️ Postgres เก็บ created_at เป็น UTC และ req_date ก็มาจาก current_date ฝั่ง UTC
+//    กะดึกที่เบิกตี 5 ไทย = ยังเป็น "เมื่อวาน" ในสายตา UTC → ยอด "วันนี้" จะเพี้ยน
+//    จึงยึด created_at แล้วบวก 7 ชม.เองเสมอ (ไทยไม่มี DST ค่าคงที่ปลอดภัยกว่าโซนเครื่อง)
+function dayKeyTH(ts){
+  if(!ts) return '';
+  const t = new Date(ts);
+  if(isNaN(t.getTime())) return String(ts).slice(0,10);
+  return new Date(t.getTime() + 7*3600*1000).toISOString().slice(0,10);
+}
+function recDay(r){
+  if(!r) return '';
+  return dayKeyTH(r.created_at) || String(r.req_date||'').slice(0,10);
+}
+function monthOf(iso){ return String(iso||'').slice(0,7); }
+function reqTotal(r){
+  return ((r&&r.lines)||[]).reduce((a,l) => a + (Number(l.qty)||0), 0);
+}
+function daysInMonth(ym){
+  const [y,m] = String(ym||'').split('-').map(Number);
+  if(!y||!m) return 0;
+  return new Date(y, m, 0).getDate();
+}
+function monthDiff(fromYM, toYM){
+  const [y1,m1] = String(fromYM||'').split('-').map(Number);
+  const [y2,m2] = String(toYM||'').split('-').map(Number);
+  if(!y1||!m1||!y2||!m2) return null;
+  return (y2-y1)*12 + (m2-m1);
+}
+// สถานะวันหมดอายุ (expiry เก็บเป็น 'YYYY-MM')
+function expiryOf(expiry, todayYM, warnM){
+  if(!expiry) return null;
+  const d = monthDiff(todayYM, expiry);
+  if(d === null) return null;
+  if(d < 0)  return ['หมดอายุแล้ว','badge-dang'];
+  if(d === 0) return ['หมดอายุเดือนนี้','badge-dang'];
+  if(d <= (warnM==null?EXPIRY_WARN_M:warnM)) return [`ใกล้หมดอายุ (${d} เดือน)`,'badge-warn'];
+  return ['ปกติ','badge-ok'];
+}
+// รายการที่ต้องเตือนในหน้าคลัง
+function lowItems(items){
+  return (items||[]).filter(it => statusOf(it)[1] !== 'badge-ok');
+}
+function expiringItems(items, todayYM, warnM){
+  return (items||[]).filter(it => {
+    const e = expiryOf(it.expiry, todayYM, warnM);
+    return e && e[1] !== 'badge-ok';
+  });
+}
+/* ---------- แดชบอร์ดแบบไม่ต้องใส่รหัส (get_dashboard) ----------
+   DB คำนวณ "วัน" ตามโซนไทยมาให้แล้ว ฝั่งนี้จึงไม่ต้องแปลงเวลาอีก
+   (ต่างจากหน้าประวัติที่ยังอ่าน created_at ดิบ แล้วใช้ dayKeyTH เอง)   */
+// รายการ PPE จากแดชบอร์ด — เติม min ให้ statusOf() ใช้ได้เหมือนของเดิม
+function dashItems(dash){
+  return ((dash && dash.items) || []).map(x => ({
+    id:x.id, name:x.name, cat:x.cat, color:x.color, unit:x.unit,
+    stock:x.stock, min:x.min_stock
+  }));
+}
+// เติมวันที่ไม่มีการเบิกให้เป็น 0 ตลอดเดือน (DB ส่งมาเฉพาะวันที่มีข้อมูล)
+function seriesFromDaily(daily, ym){
+  const n = daysInMonth(ym);
+  if(!n) return [];
+  const out = [];
+  for(let d=1; d<=n; d++) out.push({ d, iso: ym + '-' + String(d).padStart(2,'0'), qty:0 });
+  (daily||[]).forEach(r => {
+    const day = String(r.d||'').slice(0,10);
+    if(monthOf(day) !== ym) return;
+    const i = Number(day.slice(8,10)) - 1;
+    if(out[i]) out[i].qty += Number(r.qty)||0;
+  });
+  return out;
+}
+function monthListFromDaily(daily, todayIso){
+  const s = new Set();
+  if(todayIso) s.add(monthOf(todayIso));
+  (daily||[]).forEach(r => { const m = monthOf(String(r.d||'')); if(m) s.add(m); });
+  return [...s].sort().reverse();
+}
+function dashTodayRows(dash){
+  return ((dash && dash.today) || []).map(x => ({
+    id:x.item_id, name:x.name, qty:Number(x.qty)||0
+  }));
+}
+
+// ค้นหาในหน้าประวัติ: เลขที่ใบ / ชื่อผู้เบิก / ชื่อรายการ
+function filterHistory(history, q){
+  const s = String(q||'').trim().toLowerCase();
+  if(!s) return history||[];
+  return (history||[]).filter(r =>
+    String(r.id||'').toLowerCase().includes(s) ||
+    String(r.person||'').toLowerCase().includes(s) ||
+    (r.lines||[]).some(l => String(l.name||'').toLowerCase().includes(s))
+  );
+}
+
+/* ============================================================
+   5) DATA LAYER — Supabase
+   ============================================================ */
+// ตาราง ppe_items ปิด anon ไว้ → ต้องดึงผ่าน RPC ที่ตรวจรหัสเท่านั้น
+async function loadItems(){
+  if(!userPin){ state.items = []; return; }
+  const { data, error } = await sb.rpc('get_catalog', { p_pin: userPin });
+  if(error) throw error;
+  state.items = (data||[]).map(x => ({
+    id:x.id, name:x.name, cat:x.cat, model:x.model, color:x.color, unit:x.unit,
+    stock:x.stock, min:x.min_stock, target:x.target,
+    expiry:x.expiry, cycle:x.cycle_m, last:x.last_replaced,
+    sort:x.sort_order            // เฟส 4: ต้องอ่านมาด้วย ไม่งั้นตอนแก้รายการจะเขียนทับลำดับเป็น 0
+  }));
+  dlog('LOAD', `โหลดรายการ PPE ${state.items.length} รายการ`);
+}
+async function submitReq(){
+  const lines = cartArr().map(c => ({ id:c.id, qty:c.qty }));
+  const token = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
+  dlog('SUBMIT', `ยิง approve_requisition ${lines.length} รายการ`);
+  const { data, error } = await sb.rpc('approve_requisition', {
+    p_pin: userPin,                       // Postgres ตรวจรหัสซ้ำทุกครั้ง ไม่เชื่อ JS
+    p_person: state.person.trim(),
+    p_lines: lines,
+    p_note: state.note.trim() || null,
+    p_client_token: token
+  });
+  if(error) throw error;
+  return data;
+}
+
+// แดชบอร์ด: RPC เดียวในระบบที่ไม่ต้องส่งรหัส — คืนแต่ตัวเลขรวม ไม่มีข้อมูลบุคคล
+async function loadDashboard(){
+  const { data, error } = await sb.rpc('get_dashboard');
+  if(error) throw error;
+  state.dash = data || null;
+  const d = state.dash || {};
+  dlog('LOAD', `แดชบอร์ด: ${(d.items||[]).length} รายการ · ${(d.daily||[]).length} วันที่มีการเบิก · ${d.req_count||0} ใบ`);
+}
+
+/* ---------- เฟส 2: ต้องใช้รหัสแม่เท่านั้น (Postgres ตรวจซ้ำทุกครั้ง) ---------- */
+async function loadHistory(){
+  const { data, error } = await sb.rpc('admin_get_history', { p_pin: userPin, p_limit: 1000 });
+  if(error) throw error;
+  state.history = data || [];
+  dlog('LOAD', `โหลดประวัติใบเบิก ${state.history.length} ใบ`);
+}
+async function loadMovements(){
+  const { data, error } = await sb.rpc('admin_get_movements', { p_pin: userPin, p_limit: 300 });
+  if(error) throw error;
+  state.moves = data || [];
+  dlog('LOAD', `โหลด movement ${state.moves.length} รายการ`);
+}
+async function adjustStock(itemId, delta, reason, note){
+  dlog('ADJUST', `${itemId} ${delta>0?'+':''}${delta} (${reason})`);
+  const { data, error } = await sb.rpc('admin_adjust_stock', {
+    p_pin: userPin, p_item_id: itemId, p_delta: delta,
+    p_reason: reason, p_note: note || null, p_actor: 'ADMIN'
+  });
+  if(error) throw error;
+  return data;
+}
+// เฟส 4: เพิ่ม/แก้ข้อมูลรายการ PPE — ไม่แตะ stock (สต็อกเปลี่ยนผ่าน adjustStock เท่านั้น)
+async function upsertItem(form){
+  const p_item = {
+    id: String(form.id).trim(), name: String(form.name).trim(), cat: String(form.cat).trim(),
+    model: form.model, color: String(form.color).trim(), unit: String(form.unit).trim(),
+    min_stock: Number(form.min_stock), target: Number(form.target),
+    expiry: String(form.expiry).trim() || null, cycle_m: Number(form.cycle_m),
+    last_replaced: String(form.last_replaced).trim() || null, sort_order: Number(form.sort_order)
+  };
+  dlog('ITEM', `บันทึกรายการ ${p_item.id}`);
+  const { data, error } = await sb.rpc('admin_upsert_item', { p_pin: userPin, p_item });
+  if(error) throw error;
+  return data;
+}
+// ซ่อนรายการ (ไม่ลบจริง — ประวัติเบิกเดิมยังอ้างถึงได้)
+async function setItemActive(itemId, active){
+  dlog('ITEM', `${active?'เปิด':'ซ่อน'}รายการ ${itemId}`);
+  const { data, error } = await sb.rpc('admin_set_item_active', {
+    p_pin: userPin, p_item_id: itemId, p_active: active
+  });
+  if(error) throw error;
+  return data;
+}
+// โหลดข้อมูลฝั่ง admin — เรียกเมื่อถือรหัสแม่เท่านั้น
+async function loadAdminData(){
+  if(state.pinLevel !== 'admin') return;
+  await loadHistory();
+  await loadMovements();
+  state.p2loaded = true;
+}
+
+/* ============================================================
+   6) RENDER
+   ============================================================ */
+function render(){
+  dbgRefresh();
+  if(!state.ready){ return; }
+
+  // ยังไม่ตั้งค่า Supabase -> หน้าบอกวิธี (หน้าเดียวที่ยังใช้ gate)
+  if(!configured()){ showGate(viewSetup()); return; }
+
+  // เปิดมาเจอหน้าเบิกทันที ไม่มีด่านล็อกอิน
+  $('#gate').style.display = 'none';
+  $('#app').style.display  = 'flex';
+
+  renderNav();
+  const t = TABS[state.tab] || TABS.req;
+  $('#pageTitle').textContent = state.slip ? 'เอกสารการเบิกจ่าย' : t[0];
+  $('#pageSub').textContent   = state.slip ? 'พิมพ์หรือบันทึกเป็น PDF แล้วส่งให้สโตร์' : t[1];
+  $('#todayTxt').textContent  = fmtD(todayISO());
+  $('#statusDot').style.background = state.err ? 'var(--red)' : 'var(--green)';
+  // แถบล่างซ้าย: บอกว่าตอนนี้ถือรหัสระดับไหน
+  const L = state.pinLevel;
+  $('#whoName').textContent = L === 'admin' ? 'รหัสผู้ดูแล' : (L === 'issue' ? 'รหัสเบิกของ' : 'ยังไม่ได้ใส่รหัส');
+  $('#whoRole').textContent = L === 'admin' ? 'แก้ไขได้ทั้งระบบ'
+                            : (L === 'issue' ? 'คีย์ใบเบิกได้อย่างเดียว' : 'ต้องใส่รหัสก่อนใช้งาน');
+  $('#avatar').textContent  = L === 'admin' ? '🔓' : (L === 'issue' ? '📋' : '🔒');
+  $('#adminBtn').innerHTML  = L ? 'ออกจากระบบ (ลืมรหัส)' : '🔒 ใส่รหัส';
+  $('#adminBtn').dataset.act = L ? 'exitAdmin' : 'askPin';
+
+  const v = $('#view');
+  if(state.loading){ v.innerHTML = `<div class="empty"><div class="spin"></div>กำลังโหลดข้อมูล…</div>`; return; }
+
+  let html = '';
+  if(state.err) html += `<div class="card danger" style="margin-bottom:18px">
+    <div class="eyebrow" style="color:#ff6b6b">เกิดข้อผิดพลาด</div>
+    <div style="margin-top:6px">${esc(state.err)}</div></div>`;
+
+  const need = (TABS[state.tab] || TABS.req)[3];
+  if(!canAccess(need, L))          html += viewPin(state.tab);   // ยังไม่มีสิทธิ์ -> ขอรหัสก่อน
+  else if(state.slip)              html += viewDoc();            // เอกสาร (ใบใหม่ หรือ ใบเก่าจากประวัติ)
+  else if(state.tab === 'req')     html += viewReq();
+  else if(state.tab === 'dash')    html += viewDash();
+  else if(state.tab === 'stock')   html += viewStock();
+  else if(state.tab === 'history') html += viewHistory();
+  v.innerHTML = html;
+
+  renderModal();
+  mountCharts();    // ต้องหลัง innerHTML เสมอ เพราะ canvas เพิ่งถูกสร้างใหม่
+}
+
+/* ---------- กราฟ: วาดใหม่ทุกครั้งที่ render (canvas เก่าถูกทิ้งไปแล้ว) ---------- */
+let charts = [];
+function killCharts(){ charts.forEach(c => { try{ c.destroy(); }catch(e){} }); charts = []; }
+function mountCharts(){
+  killCharts();
+  if(state.tab !== 'dash' || state.slip || !state.dash) return;
+  if(typeof Chart === 'undefined') return;   // CDN โหลดไม่ติด -> หน้าอื่นยังใช้ได้ตามปกติ
+
+  Chart.defaults.color = '#9a9da5';
+  Chart.defaults.font.family = "'Kanit',system-ui,sans-serif";
+
+  const c1 = document.getElementById('ch1');
+  if(c1){
+    const items = dashItems(state.dash);
+    const rows = dashTodayRows(state.dash);
+    charts.push(new Chart(c1, {
+      type:'bar',
+      data:{
+        labels: rows.map(r => r.name),
+        datasets:[{
+          label:'จำนวนที่เบิก',
+          data: rows.map(r => r.qty),
+          backgroundColor: rows.map(r => (items.find(i => i.id === r.id) || {}).color || '#ffd21e'),
+          borderColor:'#0a0a0b', borderWidth:1, borderRadius:5, maxBarThickness:38
+        }]
+      },
+      options:{
+        indexAxis:'y',              // แนวนอน = ชื่อไทยยาวๆ อ่านออกบนมือถือ
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false},
+          tooltip:{ callbacks:{ label: c => ' ' + c.parsed.x + ' ชิ้น' } } },
+        scales:{
+          x:{ beginAtZero:true, ticks:{precision:0}, grid:{color:'#2a2c33'} },
+          y:{ grid:{display:false}, ticks:{font:{size:12}} }
+        }
+      }
+    }));
+  }
+
+  const c2 = document.getElementById('ch2');
+  if(c2){
+    const dToday = String((state.dash && state.dash.today_date) || todayISO()).slice(0,10);
+    const ser = seriesFromDaily(state.dash && state.dash.daily, state.month || monthOf(dToday));
+    charts.push(new Chart(c2, {
+      type:'bar',
+      data:{
+        labels: ser.map(s => String(s.d)),
+        datasets:[{ label:'รวมทุกรายการ', data: ser.map(s => s.qty),
+          backgroundColor:'#ffd21e', borderRadius:4, maxBarThickness:34 }]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false},
+          tooltip:{ callbacks:{
+            title: c => fmtD(ser[c[0].dataIndex].iso),
+            label: c => ' ' + c.parsed.y + ' ชิ้น' } } },
+        scales:{
+          // จอแคบแสดงเลขวันทุกวันจะทับกัน -> ให้ Chart.js เว้นเลขเองตามความกว้างจริง
+          x:{ grid:{display:false}, ticks:{font:{size:10}, autoSkip:true,
+              maxTicksLimit: window.innerWidth < 520 ? 8 : 31, maxRotation:0} },
+          y:{ beginAtZero:true, ticks:{precision:0}, grid:{color:'#2a2c33'} }
+        }
+      }
+    }));
+  }
+}
+
+function showGate(inner){
+  $('#app').style.display  = 'none';
+  $('#gate').style.display = 'flex';
+  $('#gateCard').innerHTML = inner;
+}
+
+function renderNav(){
+  const mk = (k, mobile) => {
+    const [name,,ic,need] = TABS[k];
+    const on = state.tab === k;
+    const locked = !canAccess(need, state.pinLevel);   // ยังไม่มีสิทธิ์ = ขึ้นแม่กุญแจ
+    if(mobile){
+      return `<button class="mnavbtn ${on?'on':''}" data-act="tab" data-tab="${k}">
+        <span class="ic">${locked?'🔒':ic}</span><span>${esc(name.split(/[–\s]/)[0])}</span></button>`;
+    }
+    return `<button class="navbtn ${on?'on':''}" data-act="tab" data-tab="${k}">
+      <span class="ic">${ic}</span><span>${esc(name)}</span>
+      ${locked?'<span class="soon">🔒</span>':''}</button>`;
+  };
+  $('#nav').innerHTML  = Object.keys(TABS).map(k => mk(k,false)).join('');
+  $('#mnav').innerHTML = Object.keys(TABS).map(k => mk(k,true)).join('');
+}
+
+/* ---------- หน้ายังไม่ได้ตั้งค่า ---------- */
+function viewSetup(){
+  return `<div class="eyebrow">ตั้งค่าก่อนใช้งาน</div>
+  <h3 style="margin:8px 0 12px;font-size:19px">ยังไม่ได้เชื่อม Supabase</h3>
+  <p style="color:var(--tx2);font-size:14px;margin:0 0 14px">เปิดไฟล์ <b style="color:var(--y)">index.html</b> แล้วแก้ 2 บรรทัดนี้ (อยู่ต้นแท็ก script):</p>
+  <div style="background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:14px;
+       font:13px/1.9 ui-monospace,Consolas,monospace;color:var(--tx2);overflow-x:auto">
+    const SUPABASE_URL&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; = '<span style="color:var(--y)">...</span>';<br>
+    const SUPABASE_ANON_KEY = '<span style="color:var(--y)">...</span>';
+  </div>
+  <p style="color:var(--tx3);font-size:13px;margin:14px 0 0">
+    ค่าทั้งสองอยู่ที่ Supabase → Project Settings → API<br>
+    และอย่าลืมรันไฟล์ <b style="color:var(--y)">▶ schema.sql</b> ใน SQL Editor ก่อน</p>`;
+}
+
+/* ---------- ด่านกรอกรหัสผู้ดูแล ---------- */
+function viewPin(tab){
+  const [name,sub] = TABS[tab] || ['ใส่รหัส','',''];
+  const need = (TABS[tab] || TABS.req)[3];
+  const msg = state.pinMsg
+    ? `<div class="pill ${state.pinMsg.ok?'badge-ok':'badge-dang'}" style="margin:0 0 16px;white-space:normal;display:flex">
+         ${esc(state.pinMsg.text)}</div>` : '';
+  // ถ้าถือรหัสเบิกอยู่แล้วแต่จะเข้าหน้าที่ต้องใช้รหัสแม่ ให้บอกให้ชัดว่าทำไมเข้าไม่ได้
+  const wrongLevel = state.pinLevel === 'issue' && need === 'admin'
+    ? `<div class="pill badge-warn" style="margin:0 0 16px;white-space:normal;display:flex">
+         ตอนนี้ถือรหัสเบิกของอยู่ · หน้านี้ต้องใช้รหัสผู้ดูแล</div>` : '';
+  return `<div class="card" style="max-width:460px">
+    <div style="font-size:34px;margin-bottom:8px">🔒</div>
+    <div class="eyebrow">ต้องใส่รหัสก่อน</div>
+    <h3 style="margin:8px 0 6px;font-size:20px">${esc(name)}</h3>
+    <p style="color:var(--tx2);font-size:13.5px;margin:0 0 18px">${esc(sub)}</p>
+    ${wrongLevel}${msg}
+    <label class="fld"><span>${need === 'admin' ? 'รหัสผู้ดูแล' : 'รหัสเบิกของ หรือ รหัสผู้ดูแล'}</span>
+      <input class="inp" type="password" id="pinInput" placeholder="••••••••"
+             autocomplete="off" inputmode="text"></label>
+    <button class="btn" style="width:100%" data-act="pin" ${state.busy?'disabled':''}>
+      ${state.busy ? 'กำลังตรวจรหัส…' : 'เข้าใช้งาน'}</button>
+    <p style="color:var(--tx3);font-size:12.5px;margin:16px 0 0;line-height:1.7">
+      <b style="color:var(--tx2)">รหัสเบิกของ</b> — คีย์ใบเบิกได้อย่างเดียว<br>
+      <b style="color:var(--tx2)">รหัสผู้ดูแล</b> — ใช้ได้ทุกหน้า แก้ไขข้อมูลได้ทั้งระบบ<br>
+      รหัสจำไว้จนกว่าจะปิดหน้าเว็บ ปิดแล้วต้องใส่ใหม่</p>
+  </div>`;
+}
+
+/* ---------- แดชบอร์ด (A9: กราฟวันนี้ + กราฟรายวันกรองเดือน) ---------- */
+function viewDash(){
+  if(!state.dash){
+    return `<div class="empty"><div class="ic">📊</div>ยังโหลดตัวเลขแดชบอร์ดไม่สำเร็จ<br>
+      <span style="font-size:13px">ตรวจอินเทอร์เน็ต แล้วกดปุ่มด้านล่าง</span>
+      <div style="margin-top:16px"><button class="btn sm" data-act="reload">↻ ลองใหม่</button></div></div>`;
+  }
+  // วันที่ยึดตามที่ DB คิดมาให้ (โซนไทย) ไม่ใช่นาฬิกาเครื่องผู้ใช้ ซึ่งอาจตั้งผิดโซน
+  const today = String(state.dash.today_date || todayISO()).slice(0,10);
+  const ym    = state.month || monthOf(today);
+  const items = dashItems(state.dash);
+  const byItem = dashTodayRows(state.dash);
+  const todayQty  = byItem.reduce((a,r) => a + r.qty, 0);
+  const monthQty  = seriesFromDaily(state.dash.daily, ym).reduce((a,s) => a + s.qty, 0);
+  const low       = lowItems(items).length;
+  const totalStock = items.reduce((a,x) => a + (Number(x.stock)||0), 0);
+
+  const months = monthListFromDaily(state.dash.daily, today);
+  const opts = months.map(m => `<option value="${esc(m)}" ${m===ym?'selected':''}>${fmtM(m)}</option>`).join('');
+
+  const noChart = typeof Chart === 'undefined'
+    ? `<div class="pill badge-dang" style="white-space:normal;display:flex;margin-bottom:14px">
+         โหลดไลบรารีกราฟ (Chart.js) ไม่สำเร็จ · ตรวจอินเทอร์เน็ต แล้วรีเฟรชหน้า</div>` : '';
+
+  const g1 = byItem.length
+    ? `<div class="chartbox"><canvas id="ch1"></canvas></div>`
+    : `<div class="empty" style="padding:34px 12px"><div class="ic">📭</div>วันนี้ยังไม่มีการเบิก</div>`;
+
+  const t1 = byItem.length
+    ? `<div class="tbwrap" style="margin-top:12px"><table class="tb">
+        <thead><tr><th>รายการ</th><th style="text-align:right">จำนวน (ชิ้น)</th></tr></thead>
+        <tbody>${byItem.map(r => `<tr><td>${esc(r.name)}</td><td class="num">${r.qty}</td></tr>`).join('')}</tbody>
+       </table></div>` : '';
+
+  return `${noChart}
+  <div class="kpis">
+    <div class="kpi"><div class="eyebrow">เบิกวันนี้</div>
+      <div class="bignum">${todayQty}</div><div class="cap">ชิ้น · ${byItem.length} รายการ</div></div>
+    <div class="kpi plain"><div class="eyebrow">${esc(fmtM(ym))}</div>
+      <div class="bignum">${monthQty}</div><div class="cap">ชิ้นทั้งเดือน</div></div>
+    <div class="kpi plain"><div class="eyebrow">คงเหลือในคลัง</div>
+      <div class="bignum">${totalStock}</div><div class="cap">ชิ้น · ${state.dash.req_count||0} ใบเบิกสะสม</div></div>
+    <div class="kpi ${low?'dang':''}"><div class="eyebrow">ต้องเติมสต็อก</div>
+      <div class="bignum">${low}</div><div class="cap">รายการต่ำกว่า/ใกล้ขั้นต่ำ</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="eyebrow">กราฟ 1</div>
+    <h3>วันนี้จ่ายอะไรออกไปบ้าง · ${esc(fmtD(today))}</h3>
+    ${g1}${t1}
+  </div>
+
+  <div class="panel">
+    <div class="eyebrow">กราฟ 2</div>
+    <h3>ยอดเบิกรายวัน</h3>
+    <div class="filterbar">
+      <span style="font-size:13px;color:var(--tx2)">เลือกเดือน</span>
+      <select class="sel" id="monthSel" data-act="month">${opts}</select>
+      <span style="font-size:13px;color:var(--tx3);margin-left:auto">รวม ${monthQty} ชิ้น</span>
+    </div>
+    <div class="chartbox tall"><canvas id="ch2"></canvas></div>
+    <p style="color:var(--tx3);font-size:12.5px;margin:12px 0 0">แต่ละแท่ง = ยอดรวมทุกรายการของวันนั้น · แตะแท่งเพื่อดูวันที่และจำนวน</p>
+  </div>
+
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <button class="btn ghost sm" data-act="reload">↻ ดึงข้อมูลใหม่</button>
+    <!-- ทางเข้า story สำหรับมือถือ (sidebar ถูกซ่อนที่ ≤860px) -->
+    <a class="btn ghost sm" style="text-decoration:none" href="story.html">🎬 เรื่องเล่าความปลอดภัย</a>
+  </div>`;
+}
+
+/* ---------- คลัง PPE: ปรับยอด / รับของเข้า / แจ้งเตือน ---------- */
+function viewStock(){
+  const ym  = monthOf(todayISO());
+  const low = lowItems(state.items);
+  const exp = expiringItems(state.items, ym, EXPIRY_WARN_M);
+
+  const alertBox = (title, arr, mk) => arr.length
+    ? `<div class="panel"><div class="eyebrow">แจ้งเตือน</div><h3>${title} (${arr.length})</h3>${arr.map(mk).join('')}</div>` : '';
+
+  const lowHtml = alertBox('ของใกล้หมด / ต่ำกว่าขั้นต่ำ', low, it => {
+    const [txt,cls] = statusOf(it);
+    return `<div class="alertrow"><span class="nm">${esc(it.name)}</span>
+      <span style="color:var(--tx3);font-size:12.5px">เหลือ ${it.stock}/${it.min} ${esc(it.unit)}</span>
+      <span class="pill ${cls}">${txt}</span></div>`;
+  });
+  const expHtml = alertBox(`ใกล้หมดอายุ (ภายใน ${EXPIRY_WARN_M} เดือน)`, exp, it => {
+    const e = expiryOf(it.expiry, ym, EXPIRY_WARN_M) || ['—','plain'];
+    return `<div class="alertrow"><span class="nm">${esc(it.name)}</span>
+      <span style="color:var(--tx3);font-size:12.5px">หมด ${esc(fmtM(it.expiry))}</span>
+      <span class="pill ${e[1]}">${esc(e[0])}</span></div>`;
+  });
+
+  const rows = state.items.map(it => {
+    const [txt,cls] = statusOf(it);
+    const e = expiryOf(it.expiry, ym, EXPIRY_WARN_M);
+    const sc = it.stock <= 0 ? 'out' : (it.stock < it.min ? 'low' : '');
+    return `<tr>
+      <td><div style="display:flex;align-items:center;gap:10px">
+        <span style="width:20px;height:20px;border-radius:6px;flex:none;background:${esc(it.color)};border:1px solid rgba(255,255,255,.1)"></span>
+        <div><div style="font-weight:600">${esc(it.name)}</div>
+          <div style="font-size:11.5px;color:var(--tx3)">${esc(it.cat)}</div></div></div></td>
+      <td class="num"><span class="stocknum ${sc}" style="font-size:16px">${it.stock}</span>
+        <span style="font-size:11px;color:var(--tx3);font-weight:400"> ${esc(it.unit)}</span></td>
+      <td style="color:var(--tx3);font-size:13px">${it.min}</td>
+      <td><span class="pill ${cls}">${txt}</span></td>
+      <td style="font-size:13px;color:var(--tx2)">${esc(fmtM(it.expiry))}
+        ${e && e[1]!=='badge-ok' ? `<br><span class="pill ${e[1]}" style="margin-top:4px">${esc(e[0])}</span>` : ''}</td>
+      <td><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+        <button class="btn ghost sm" data-act="adjOpen"  data-id="${esc(it.id)}">ปรับยอด</button>
+        <button class="btn ghost sm" data-act="itemEdit" data-id="${esc(it.id)}">แก้ไข</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+
+  const mv = state.moves.slice(0,20).map(m => {
+    const it = state.items.find(i => i.id === m.item_id);
+    const rs = m.reason === 'issue' ? 'จ่ายออก' : (m.reason === 'receive' ? 'รับเข้า' : 'ปรับยอด');
+    return `<div class="mv">
+      <span class="d ${m.delta>0?'plus':'minus'}">${m.delta>0?'+':''}${m.delta}</span>
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        ${esc(it ? it.name : m.item_id)}
+        <span style="color:var(--tx3);font-size:12px"> · ${rs}${m.ref_id?' · '+esc(m.ref_id):''}</span></span>
+      <span class="when">${esc(fmtD(dayKeyTH(m.created_at)))}</span></div>`;
+  }).join('');
+
+  return `${lowHtml}${expHtml}
+  <div class="panel">
+    <div class="eyebrow">คลังทั้งหมด</div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <h3 style="flex:1;min-width:180px">รายการ PPE ${state.items.length} รายการ</h3>
+      <button class="btn sm" data-act="itemNew">＋ เพิ่มรายการใหม่</button>
+    </div>
+    <div class="tbwrap"><table class="tb">
+      <thead><tr><th>รายการ</th><th style="text-align:right">คงเหลือ</th><th>ขั้นต่ำ</th><th>สถานะ</th><th>หมดอายุ</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+  </div>
+
+  <div class="panel">
+    <div class="eyebrow">Audit trail</div>
+    <h3>ความเคลื่อนไหวล่าสุด</h3>
+    ${mv || '<div class="empty" style="padding:26px 12px">ยังไม่มีความเคลื่อนไหว</div>'}
+  </div>
+
+  <button class="btn ghost sm" data-act="reload">↻ ดึงข้อมูลใหม่</button>`;
+}
+
+/* ---------- ประวัติการเบิก ---------- */
+function viewHistory(){
+  const list = filterHistory(state.history, state.hq);
+  const rows = list.map(r => {
+    const tot = reqTotal(r);
+    const names = (r.lines||[]).map(l => l.name).join(', ');
+    return `<tr>
+      <td style="font-weight:700;color:var(--y);white-space:nowrap">${esc(r.id)}</td>
+      <td style="white-space:nowrap">${esc(fmtD(recDay(r)))}</td>
+      <td>${esc(r.person)}
+        <div style="font-size:11.5px;color:var(--tx3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px">${esc(names)}</div></td>
+      <td class="num">${tot}</td>
+      <td style="color:var(--tx3);font-size:13px">${(r.lines||[]).length} รายการ</td>
+      <td style="text-align:right"><button class="btn ghost sm" data-act="openSlip" data-id="${esc(r.id)}">เปิดเอกสาร</button></td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="panel">
+    <div class="filterbar">
+      <input class="inp srch" id="hSearch" placeholder="ค้นหา เลขที่ใบ / ชื่อผู้เบิก / ชื่อรายการ" value="${esc(state.hq)}">
+      <button class="btn sm" data-act="hsearch">ค้นหา</button>
+      ${state.hq ? `<button class="btn ghost sm" data-act="hclear">ล้าง</button>` : ''}
+    </div>
+    <div style="font-size:13px;color:var(--tx3);margin-bottom:10px">
+      พบ ${list.length} ใบ${state.hq?` จากทั้งหมด ${state.history.length} ใบ`:''}</div>
+    ${list.length ? `<div class="tbwrap"><table class="tb">
+      <thead><tr><th>เลขที่</th><th>วันที่</th><th>ผู้เบิก</th><th style="text-align:right">รวม</th><th></th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`
+      : `<div class="empty"><div class="ic">🕘</div>ไม่พบใบเบิกที่ตรงกับคำค้น</div>`}
+  </div>
+  <button class="btn ghost sm" data-act="reload">↻ ดึงข้อมูลใหม่</button>`;
+}
+
+/* ---------- modal ปรับยอด / รับของเข้า ---------- */
+function renderModal(){
+  const ov = $('#overlay');
+  if(!state.adjust && !state.edit){ ov.classList.remove('show'); $('#modalBox').innerHTML = ''; return; }
+  if(state.edit){ modalEditItem(ov); return; }        // เฟส 4: modal จัดการรายการ PPE
+  const a  = state.adjust;
+  const it = state.items.find(i => i.id === a.itemId);
+  if(!it){ state.adjust = null; ov.classList.remove('show'); return; }
+
+  const opt = (v,t) => `<option value="${v}" ${a.mode===v?'selected':''}>${t}</option>`;
+  $('#modalBox').innerHTML = `
+    <div class="eyebrow">ปรับยอดสต็อก</div>
+    <h3 style="margin:7px 0 4px;font-size:19px">${esc(it.name)}</h3>
+    <p style="color:var(--tx2);font-size:13.5px;margin:0 0 16px">
+      คงเหลือตอนนี้ <b style="color:var(--y)">${it.stock}</b> ${esc(it.unit)}</p>
+    ${a.err ? `<div class="pill badge-dang" style="margin:0 0 14px;white-space:normal;display:flex">${esc(a.err)}</div>` : ''}
+    <label class="fld"><span>ประเภท</span>
+      <select class="sel" id="adjMode" style="width:100%">
+        ${opt('receive','รับของเข้า (+)')}
+        ${opt('adjust+','ปรับยอดเพิ่ม (+)')}
+        ${opt('adjust-','ปรับยอดลด (−)')}
+      </select></label>
+    <label class="fld"><span>จำนวน (${esc(it.unit)})</span>
+      <input class="inp" id="adjQty" type="number" min="1" inputmode="numeric" value="${esc(a.qty)}" placeholder="เช่น 20"></label>
+    <label class="fld"><span>หมายเหตุ (ถ้ามี)</span>
+      <input class="inp" id="adjNote" value="${esc(a.note)}" placeholder="เช่น รับจากผู้ขาย ใบส่งของ 1234"></label>
+    <div style="display:flex;gap:10px">
+      <button class="btn ghost" data-act="adjClose" ${state.busy?'disabled':''}>ยกเลิก</button>
+      <button class="btn" style="flex:1" data-act="adjSave" ${state.busy?'disabled':''}>
+        ${state.busy ? 'กำลังบันทึก…' : '✓ บันทึก'}</button>
+    </div>
+    <p style="color:var(--tx3);font-size:12px;margin:14px 0 0">ทุกการปรับยอดถูกบันทึกลง audit trail ย้อนดูได้เสมอ</p>`;
+  ov.classList.add('show');
+}
+
+/* ---------- เฟส 4: modal เพิ่ม/แก้ไขรายการ PPE ---------- */
+function modalEditItem(ov){
+  const ed = state.edit, f = ed.form;
+  // ช่องกรอกทุกช่องผูก data-f ไว้ ตัว listener จะเก็บค่าเข้า state.edit.form ให้เองทันทีที่พิมพ์
+  const fld = (k, label, attr, hint) => `<label class="fld"><span>${label}</span>
+    <input class="inp" data-f="${k}" value="${esc(f[k])}" ${attr||''}></label>
+    ${hint ? `<div style="font-size:11.5px;color:var(--tx3);margin:-8px 0 12px">${hint}</div>` : ''}`;
+
+  const half = (a,b) => `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">${a}${b}</div>`;
+
+  const models = MODELS.map(([v,t]) =>
+    `<option value="${v}" ${f.model===v?'selected':''}>${t}</option>`).join('');
+
+  // ตอนกดซ่อน: เปลี่ยนท้าย modal เป็นคำเตือน เพราะกู้คืนจากหน้าเว็บไม่ได้ (ดู README)
+  const hideBox = ed.confirmHide ? `
+    <div class="pill badge-dang" style="margin:16px 0 12px;white-space:normal;display:block;line-height:1.7">
+      ซ่อน "<b>${esc(f.name)}</b>" ออกจากระบบ?<br>
+      • หน้าเบิกและหน้าคลังจะไม่เห็นรายการนี้อีก<br>
+      • ประวัติใบเบิกเก่ายังอยู่ครบ ไม่หาย<br>
+      • <b>เอากลับมาเองจากหน้าเว็บไม่ได้</b> ต้องสั่งใน Supabase (วิธีอยู่ใน README)
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="btn ghost" data-act="itemHideNo" ${state.busy?'disabled':''}>ไม่ซ่อน</button>
+      <button class="btn" style="flex:1;background:var(--red);border-color:var(--red);color:#fff" data-act="itemHideYes" ${state.busy?'disabled':''}>
+        ${state.busy ? 'กำลังซ่อน…' : 'ยืนยันซ่อนรายการนี้'}</button>
+    </div>` : `
+    <div style="display:flex;gap:10px">
+      <button class="btn ghost" data-act="itemClose" ${state.busy?'disabled':''}>ยกเลิก</button>
+      <button class="btn" style="flex:1" data-act="itemSave" ${state.busy?'disabled':''}>
+        ${state.busy ? 'กำลังบันทึก…' : '✓ บันทึก'}</button>
+    </div>
+    ${ed.isNew ? '' : `<button class="btn ghost sm" data-act="itemHideAsk" style="margin-top:12px;width:100%" ${state.busy?'disabled':''}>ซ่อนรายการนี้ออกจากระบบ</button>`}`;
+
+  $('#modalBox').innerHTML = `
+    <div class="eyebrow">${ed.isNew ? 'เพิ่มรายการ PPE' : 'แก้ไขรายการ PPE'}</div>
+    <h3 style="margin:7px 0 16px;font-size:19px">${ed.isNew ? 'รายการใหม่' : esc(f.name)}</h3>
+    ${ed.err ? `<div class="pill badge-dang" style="margin:0 0 14px;white-space:normal;display:flex">${esc(ed.err)}</div>` : ''}
+
+    ${ed.isNew
+      ? fld('id','รหัสรายการ *','placeholder="เช่น apron หรือ helmet_white"','พิมพ์เล็ก a-z 0-9 _ - เท่านั้น · ตั้งแล้วเปลี่ยนไม่ได้')
+      : `<label class="fld"><span>รหัสรายการ</span>
+          <input class="inp" value="${esc(f.id)}" disabled style="opacity:.55"></label>
+         <div style="font-size:11.5px;color:var(--tx3);margin:-8px 0 12px">รหัสเปลี่ยนไม่ได้ เพราะใบเบิกเก่าอ้างถึงอยู่</div>`}
+
+    ${fld('name','ชื่อรายการ *','placeholder="เช่น ถุงมือกันบาด"')}
+    ${fld('cat','หมวดการป้องกัน *','placeholder="เช่น ป้องกันมือ"')}
+    ${fld('unit','หน่วยนับ *','placeholder="เช่น คู่ / ใบ / อัน / ชิ้น"')}
+
+    ${half(
+      fld('min_stock','ขั้นต่ำ (แจ้งเตือน) *','type="number" min="0" inputmode="numeric"'),
+      fld('target','ยอดเป้าหมาย *','type="number" min="0" inputmode="numeric"')
+    )}
+
+    <label class="fld"><span>สี (ใช้ในกราฟและภาพ 3D) *</span>
+      <div style="display:flex;gap:10px;align-items:center">
+        <input type="color" data-f="color" value="${esc(f.color)}"
+               style="width:56px;height:44px;padding:2px;border-radius:10px;border:1px solid var(--line);background:var(--bg2);flex:none">
+        <input class="inp" data-f="color" value="${esc(f.color)}" placeholder="#2f6fed" style="flex:1">
+      </div></label>
+
+    <label class="fld"><span>รูปทรงในหน้า 3D</span>
+      <select class="sel" data-f="model" style="width:100%">${models}</select></label>
+
+    ${half(
+      fld('expiry','วันหมดอายุ','placeholder="2027-06"'),
+      fld('last_replaced','เปลี่ยนล่าสุด','placeholder="2026-01"')
+    )}
+    <div style="font-size:11.5px;color:var(--tx3);margin:-8px 0 12px">รูปแบบ ปีค.ศ.-เดือน เช่น 2027-06 · เว้นว่างได้ถ้าไม่มีวันหมดอายุ</div>
+
+    ${half(
+      fld('cycle_m','รอบเปลี่ยน (เดือน)','type="number" min="0" inputmode="numeric"'),
+      fld('sort_order','ลำดับที่แสดง','type="number" min="0" inputmode="numeric"')
+    )}
+
+    <p style="color:var(--tx3);font-size:12px;margin:6px 0 0;line-height:1.7">
+      หน้านี้ไม่แตะจำนวนคงเหลือ${ed.isNew
+        ? ' — รายการใหม่จะเริ่มที่ <b>0</b> บันทึกเสร็จแล้วกด "ปรับยอด → รับของเข้า" เพื่อใส่จำนวนจริง'
+        : ' — ถ้าจะแก้จำนวน ให้ปิดหน้านี้แล้วกด "ปรับยอด"'}</p>
+    ${hideBox}`;
+  ov.classList.add('show');
+}
+
+/* ---------- flow เบิก ---------- */
+function viewReq(){
+  const steps = [[1,'เลือกรายการ'],[2,'ระบุผู้เบิก'],[3,'ตรวจและยืนยัน']];
+  const sHtml = steps.map(([n,t]) => {
+    const cls = state.reqStep === n ? 'on' : (state.reqStep > n ? 'done' : '');
+    return `<div class="step ${cls}"><span class="n">${state.reqStep>n?'✓':n}</span><span>${t}</span></div>`;
+  }).join('');
+
+  let body = '';
+  if(state.reqStep === 1)      body = stepPick();
+  else if(state.reqStep === 2) body = stepPerson();
+  else                         body = stepConfirm();
+
+  return `<div class="steps">${sHtml}</div>${body}`;
+}
+
+function stepPick(){
+  if(!state.items.length){
+    return `<div class="empty"><div class="ic">📦</div>ยังไม่มีรายการ PPE ในระบบ<br>
+      <span style="font-size:13px">ตรวจว่ารัน schema แล้วหรือยัง</span></div>`;
+  }
+  const cards = state.items.map(it => {
+    const q = state.cart[it.id] || 0;
+    const [txt,cls] = statusOf(it);
+    const sc = it.stock <= 0 ? 'out' : (it.stock < it.min ? 'low' : '');
+    return `<div class="item ${q?'picked':''}">
+      <div class="top">
+        <div class="sw" style="background:${esc(it.color)}"></div>
+        <div style="min-width:0;flex:1">
+          <h4>${esc(it.name)}</h4>
+          <div class="cat">${esc(it.cat)}</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <span class="stocknum ${sc}">${it.stock}</span>
+        <span style="font-size:12px;color:var(--tx3)">${esc(it.unit)}คงเหลือ</span>
+        <span class="pill ${cls}" style="margin-left:auto">${txt}</span>
+      </div>
+      <div class="foot">
+        <div class="qty">
+          <button class="qbtn" data-act="q" data-id="${esc(it.id)}" data-d="-1" ${q?'':'disabled style="opacity:.35"'}>−</button>
+          <span class="qnum">${q}</span>
+          <button class="qbtn" data-act="q" data-id="${esc(it.id)}" data-d="1" ${it.stock<=q?'disabled style="opacity:.35"':''}>+</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const n = cartQty();
+  return `<div class="grid-items">${cards}</div>
+  <div class="cartbar noprint">
+    <div><div class="eyebrow">รวมที่เลือก</div>
+      <div><span class="bignum" style="font-size:26px">${n}</span>
+      <span style="font-size:13px;color:var(--tx2);margin-left:5px">ชิ้น · ${cartArr().length} รายการ</span></div></div>
+    <button class="btn" data-act="step" data-n="2" ${n?'':'disabled'}>ถัดไป →</button>
+  </div>`;
+}
+
+function stepPerson(){
+  return `<div class="card" style="max-width:560px">
+    <div class="eyebrow">ข้อมูลผู้เบิก</div>
+    <h3 style="margin:8px 0 18px;font-size:19px">ใครเป็นคนมารับของ</h3>
+    <label class="fld"><span>ชื่อผู้เบิก *</span>
+      <input class="inp" id="fPerson" value="${esc(state.person)}" placeholder="เช่น สมชาย ใจดี (ฝ่ายผลิต)"></label>
+    <label class="fld"><span>หมายเหตุ (ถ้ามี)</span>
+      <input class="inp" id="fNote" value="${esc(state.note)}" placeholder="เช่น ทดแทนของชำรุด"></label>
+    <div style="display:flex;gap:10px;margin-top:6px">
+      <button class="btn ghost" data-act="step" data-n="1">← ย้อนกลับ</button>
+      <button class="btn" style="flex:1" data-act="step" data-n="3">ถัดไป →</button>
+    </div>
+  </div>`;
+}
+
+function stepConfirm(){
+  const rows = cartArr().map(c => `<tr>
+    <td><div style="display:flex;align-items:center;gap:10px">
+      <span style="width:22px;height:22px;border-radius:6px;flex:none;background:${esc(c.color)};border:1px solid rgba(255,255,255,.1)"></span>
+      ${esc(c.name)}</div></td>
+    <td class="num">${c.qty}</td><td style="color:var(--tx3);font-size:13px">${esc(c.unit)}</td></tr>`).join('');
+  const err = validateReq(state.person, state.cart, state.items);
+  return `<div class="card" style="max-width:640px">
+    <div class="eyebrow">ตรวจก่อนยืนยัน</div>
+    <h3 style="margin:8px 0 16px;font-size:19px">สรุปใบเบิก</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;margin-bottom:18px">
+      <div><div class="unit-lbl">ผู้เบิก</div><div style="font-weight:600;margin-top:3px">${esc(state.person)||'—'}</div></div>
+      <div><div class="unit-lbl">ผู้จ่าย</div><div style="font-weight:600;margin-top:3px">${esc(APPROVER_DEFAULT)}</div></div>
+      <div><div class="unit-lbl">วันที่</div><div style="font-weight:600;margin-top:3px">${fmtD(todayISO())}</div></div>
+    </div>
+    ${state.note ? `<div style="border-left:3px solid var(--y);padding:8px 12px;background:var(--bg2);border-radius:0 8px 8px 0;font-size:13.5px;color:var(--tx2);margin-bottom:16px">${esc(state.note)}</div>` : ''}
+    <div class="tbwrap"><table class="tb">
+      <thead><tr><th>รายการ</th><th style="text-align:right">จำนวน</th><th>หน่วย</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    ${err ? `<div class="pill badge-dang" style="margin-top:16px;white-space:normal;display:flex">${esc(err)}</div>` : ''}
+    <div style="display:flex;gap:10px;margin-top:20px">
+      <button class="btn ghost" data-act="step" data-n="2">← ย้อนกลับ</button>
+      <button class="btn" style="flex:1" data-act="submit" ${(err||state.busy)?'disabled':''}>
+        ${state.busy ? 'กำลังบันทึก…' : '✓ ยืนยันการเบิก'}</button>
+    </div>
+    <p style="color:var(--tx3);font-size:12.5px;margin:14px 0 0">กดยืนยันแล้วสต็อกจะถูกตัดทันทีและออกเอกสารให้พิมพ์</p>
+  </div>`;
+}
+
+/* ---------- เอกสารการเบิกจ่าย (พิมพ์ A4) ---------- */
+function viewDoc(){
+  const s = state.slip;
+  const rows = s.lines.map((l,i) => `<tr>
+    <td style="width:34px;color:#777">${i+1}</td>
+    <td>${esc(l.name)}</td>
+    <td class="n">${l.qty}</td>
+    <td style="width:66px;color:#555">${esc(l.unit)}</td></tr>`).join('');
+  const total = s.lines.reduce((a,l) => a + l.qty, 0);
+
+  return `<div class="noprint" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">
+      <button class="btn" data-act="print">🖨️ พิมพ์ / บันทึก PDF</button>
+      ${state.tab === 'history'
+        ? `<button class="btn ghost" data-act="closeSlip">← กลับไปหน้าประวัติ</button>`
+        : `<button class="btn ghost" data-act="newreq">+ คีย์ใบเบิกใหม่</button>`}
+    </div>
+    <div id="doc">
+      <div class="dhead">
+        <div><h2>ใบเบิก–จ่าย PPE</h2>
+          <div class="sub">PPE Requisition Slip</div></div>
+        <div style="text-align:right">
+          <div style="font-size:11px;letter-spacing:.14em;color:#666;font-weight:700;text-transform:uppercase">เลขที่</div>
+          <div style="font-size:21px;font-weight:800">${esc(s.id)}</div></div>
+      </div>
+      <div class="dtape"></div>
+      <div class="meta">
+        <div><b>วันที่</b>${fmtD(s.date)}</div>
+        <div><b>ผู้เบิก</b>${esc(s.person)}</div>
+        <div><b>ผู้จ่าย</b>${esc(s.approver)}</div>
+        <div><b>จำนวนรายการ</b>${s.lines.length} รายการ · รวม ${total} ชิ้น</div>
+      </div>
+      ${s.note ? `<div class="note"><b>หมายเหตุ:</b> ${esc(s.note)}</div>` : ''}
+      <table>
+        <thead><tr><th></th><th>รายการอุปกรณ์</th><th style="text-align:right">จำนวน</th><th>หน่วย</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td></td><td>รวมทั้งสิ้น</td><td class="n">${total}</td><td>ชิ้น</td></tr></tfoot>
+      </table>
+      <div class="signs">
+        <div class="sign"><div class="ln"></div><small>ผู้รับของ<br>(${esc(s.person)})</small></div>
+        <div class="sign"><div class="ln"></div><small>ผู้จ่ายของ<br>(${esc(s.approver)})</small></div>
+      </div>
+      <p style="font-size:11px;color:#888;text-align:center;margin:26px 0 0">
+        เอกสารนี้ออกจากระบบ SafeGear · พิมพ์เมื่อ ${fmtD(todayISO())} · สำหรับแผนกและสโตร์</p>
+    </div>`;
+}
+
+/* ============================================================
+   7) EVENTS
+   ============================================================ */
+document.addEventListener('click', async (e) => {
+  const el = e.target.closest('[data-act]');
+  if(!el || el.disabled) return;
+  const act = el.dataset.act;
+
+  if(act === 'tab'){
+    state.tab = el.dataset.tab; state.slip = null; state.pinMsg = null;
+    render();
+  }
+
+  else if(act === 'q'){
+    const id = el.dataset.id, d = Number(el.dataset.d);
+    const it = state.items.find(i => i.id === id);
+    if(!it) return;
+    const cur = state.cart[id] || 0;
+    const next = Math.max(0, Math.min(it.stock, cur + d));
+    if(next === 0) delete state.cart[id]; else state.cart[id] = next;
+    render();
+  }
+
+  else if(act === 'step'){
+    const n = Number(el.dataset.n);
+    if(n === 2 && state.reqStep === 1 && !cartQty()) return;
+    if(n === 3){
+      const p = $('#fPerson'); if(p) state.person = p.value;
+      const nt = $('#fNote');  if(nt) state.note = nt.value;
+      if(!state.person.trim()){ state.err = 'กรุณาระบุชื่อผู้เบิก'; render(); return; }
+    }
+    if(n === 2 && state.reqStep === 3){
+      // ย้อนจากหน้ายืนยันกลับมา ไม่ต้องทำอะไรเพิ่ม
+    }
+    state.err = null; state.reqStep = n; render();
+  }
+
+  else if(act === 'submit'){
+    const err = validateReq(state.person, state.cart, state.items);
+    if(err){ state.err = err; render(); return; }
+    state.busy = true; state.err = null; render();
+    try{
+      const lines = cartArr();
+      const res = await submitReq();
+      state.slip = {
+        id: res.id, date: todayISO(), person: state.person.trim(),
+        approver: APPROVER_DEFAULT, note: state.note.trim(),
+        lines: lines.map(l => ({ name:l.name, qty:l.qty, unit:l.unit }))
+      };
+      dlog('OK', `บันทึกใบเบิก ${res.id} สำเร็จ${res.duplicate?' (ใบเดิม ไม่ตัดสต็อกซ้ำ)':''}`);
+      state.cart = {}; state.person = ''; state.note = ''; state.reqStep = 1;
+      await loadItems();                       // ดึงสต็อกใหม่หลังตัด
+      await loadDashboard();                   // กราฟต้องเห็นใบที่เพิ่งคีย์ทันที
+      await loadAdminData();                   // ประวัติ/movement (เฉพาะรหัสแม่)
+    }catch(ex){
+      state.err = ex.message || String(ex);
+      dlog('ERROR', state.err, true);
+    }
+    state.busy = false; render();
+  }
+
+  else if(act === 'print'){ window.print(); }
+
+  else if(act === 'newreq'){ state.slip = null; state.reqStep = 1; render(); }
+
+  else if(act === 'askPin'){ state.pinMsg = null; state.slip = null; render(); }
+
+  // ตรวจรหัสกับ Postgres — JS ไม่ได้เป็นคนตัดสิน แค่ส่งไปถาม DB แล้วรับระดับสิทธิ์กลับมา
+  else if(act === 'pin'){
+    const pin = ($('#pinInput')||{}).value || '';
+    if(!pin.trim()){ state.pinMsg = {ok:false, text:'กรุณากรอกรหัส'}; render(); return; }
+    state.busy = true; state.pinMsg = null; render();
+    try{
+      const { data, error } = await sb.rpc('verify_pin', { p_pin: pin });
+      if(error) throw error;
+      if(data && data.ok){
+        userPin = pin;                       // เก็บในหน่วยความจำเท่านั้น
+        state.pinLevel = data.level;         // 'issue' หรือ 'admin'
+        dlog('PIN', 'ผ่านด้วยรหัสระดับ ' + data.level);
+        state.busy = false;
+        await boot();                        // โหลดรายการ PPE ด้วยรหัสที่เพิ่งได้
+        return;
+      }
+      state.pinMsg = {ok:false, text:'รหัสไม่ถูกต้อง'};
+      dlog('PIN', 'รหัสไม่ถูกต้อง', true);
+    }catch(ex){
+      state.pinMsg = {ok:false, text: ex.message || 'ตรวจรหัสไม่สำเร็จ'};
+      dlog('PIN', state.pinMsg.text, true);
+    }
+    state.busy = false; render();
+  }
+
+  else if(act === 'exitAdmin'){
+    userPin = null; state.pinLevel = null; state.pinMsg = null;
+    // ออกจากระบบแล้วเด้งไปแดชบอร์ด (หน้าเดียวที่ยังดูได้โดยไม่มีรหัส) ไม่ใช่ไปเจอด่านรหัสทันที
+    state.tab = 'dash'; state.slip = null; state.items = []; state.cart = {};
+    state.person = ''; state.note = ''; state.reqStep = 1;
+    // ล้างข้อมูลฝั่ง admin ออกจากหน่วยความจำด้วย ไม่ให้ค้างให้คนถัดไปเห็น
+    state.history = []; state.moves = []; state.p2loaded = false;
+    state.adjust = null; state.edit = null; state.hq = ''; state.month = null;
+    dlog('PIN', 'ออกจากระบบ ลืมรหัสแล้ว');
+    render();
+  }
+
+  /* ---------- เฟส 2 ---------- */
+  else if(act === 'reload'){
+    state.loading = true; state.err = null; render();
+    try{
+      await loadDashboard();                          // ตัวนี้ไม่ต้องใช้รหัส ดึงได้เสมอ
+      if(userPin){ await loadItems(); await loadAdminData(); }
+    }
+    catch(ex){ state.err = ex.message || String(ex); dlog('ERROR', state.err, true); }
+    state.loading = false; render();
+  }
+
+  else if(act === 'hsearch'){
+    const s = $('#hSearch'); if(s) state.hq = s.value;
+    render();
+  }
+  else if(act === 'hclear'){ state.hq = ''; render(); }
+
+  // เปิดเอกสารใบเก่ามาพิมพ์ซ้ำ — ใช้ viewDoc ตัวเดียวกับใบที่เพิ่งคีย์
+  else if(act === 'openSlip'){
+    const r = state.history.find(x => x.id === el.dataset.id);
+    if(!r) return;
+    state.slip = {
+      id: r.id, date: recDay(r), person: r.person,
+      approver: r.approver || APPROVER_DEFAULT, note: r.note || '',
+      lines: (r.lines||[]).map(l => ({ name:l.name, qty:l.qty, unit:l.unit }))
+    };
+    dlog('DOC', 'เปิดเอกสารใบเก่า ' + r.id);
+    render();
+  }
+  else if(act === 'closeSlip'){ state.slip = null; render(); }
+
+  else if(act === 'adjOpen'){
+    state.adjust = { itemId: el.dataset.id, mode:'receive', qty:'', note:'', err:null };
+    render();
+  }
+  else if(act === 'adjClose'){ state.adjust = null; render(); }
+
+  else if(act === 'adjSave'){
+    const a = state.adjust; if(!a) return;
+    const mSel = $('#adjMode'); if(mSel) a.mode = mSel.value;
+    const qEl  = $('#adjQty');  if(qEl)  a.qty  = qEl.value;
+    const nEl  = $('#adjNote'); if(nEl)  a.note = nEl.value;
+
+    const q = Number(a.qty);
+    if(!q || q <= 0 || !Number.isInteger(q)){ a.err = 'กรุณากรอกจำนวนเป็นจำนวนเต็มมากกว่า 0'; render(); return; }
+    const delta  = a.mode === 'adjust-' ? -q : q;
+    const reason = a.mode === 'receive' ? 'receive' : 'adjust';
+    const it = state.items.find(i => i.id === a.itemId);
+    if(it && it.stock + delta < 0){
+      a.err = `ปรับแล้วสต็อกติดลบ (คงเหลือ ${it.stock} ${it.unit})`; render(); return;
+    }
+
+    a.err = null; state.busy = true; render();
+    try{
+      const res = await adjustStock(a.itemId, delta, reason, a.note.trim());
+      dlog('OK', `ปรับยอด ${a.itemId} สำเร็จ เหลือ ${res && res.stock}`);
+      state.adjust = null; state.busy = false;
+      state.loading = true; render();
+      await loadItems();
+      await loadMovements();
+      await loadDashboard();                   // สต็อกเปลี่ยน = KPI แดชบอร์ดต้องเปลี่ยนตาม
+      state.loading = false;
+    }catch(ex){
+      state.busy = false; state.loading = false;
+      if(state.adjust) state.adjust.err = ex.message || String(ex);
+      dlog('ERROR', 'ปรับยอดไม่สำเร็จ: ' + (ex.message||ex), true);
+    }
+    render();
+  }
+
+  /* ---------- เฟส 4: จัดการรายการ PPE ---------- */
+  else if(act === 'itemNew'){
+    state.edit = { form: itemToForm(null), isNew:true, err:null, confirmHide:false };
+    render();
+  }
+  else if(act === 'itemEdit'){
+    const it = state.items.find(i => i.id === el.dataset.id);
+    if(!it) return;
+    state.edit = { form: itemToForm(it), isNew:false, err:null, confirmHide:false };
+    render();
+  }
+  else if(act === 'itemClose'){ state.edit = null; render(); }
+  else if(act === 'itemHideAsk'){ if(state.edit){ state.edit.confirmHide = true;  render(); } }
+  else if(act === 'itemHideNo'){  if(state.edit){ state.edit.confirmHide = false; render(); } }
+
+  else if(act === 'itemSave'){
+    const ed = state.edit; if(!ed) return;
+    const err = validateItem(ed.form, state.items, ed.isNew);
+    if(err){ ed.err = err; render(); return; }
+
+    ed.err = null; state.busy = true; render();
+    try{
+      await upsertItem(ed.form);
+      dlog('OK', `บันทึกรายการ ${ed.form.id} สำเร็จ`);
+      state.edit = null; state.busy = false;
+      state.loading = true; render();
+      await loadItems();
+      await loadDashboard();          // รายการ/ขั้นต่ำเปลี่ยน = KPI และกราฟแดชบอร์ดต้องเปลี่ยนตาม
+      state.loading = false;
+    }catch(ex){
+      state.busy = false; state.loading = false;
+      if(state.edit) state.edit.err = ex.message || String(ex);
+      dlog('ERROR', 'บันทึกรายการไม่สำเร็จ: ' + (ex.message||ex), true);
+    }
+    render();
+  }
+
+  else if(act === 'itemHideYes'){
+    const ed = state.edit; if(!ed || ed.isNew) return;
+    state.busy = true; render();
+    try{
+      await setItemActive(ed.form.id, false);
+      dlog('OK', `ซ่อนรายการ ${ed.form.id} แล้ว`);
+      state.edit = null; state.busy = false;
+      state.loading = true; render();
+      await loadItems();
+      await loadDashboard();
+      state.loading = false;
+    }catch(ex){
+      state.busy = false; state.loading = false;
+      if(state.edit) state.edit.err = ex.message || String(ex);
+      dlog('ERROR', 'ซ่อนรายการไม่สำเร็จ: ' + (ex.message||ex), true);
+    }
+    render();
+  }
+});
+
+// เปลี่ยนเดือนในกราฟ 2
+document.addEventListener('change', (e) => {
+  if(e.target.id === 'monthSel'){ state.month = e.target.value; dlog('DASH', 'กรองเดือน ' + state.month); render(); }
+  editField(e.target);        // เฟส 4: dropdown ในฟอร์มรายการ PPE (select ไม่ยิง input ทุกเบราว์เซอร์)
+});
+
+// เฟส 4: เก็บค่าช่องกรอกในฟอร์มรายการ PPE เข้า state ทันที (กัน re-render แล้วค่าหาย)
+// ช่องสีมี 2 ตัวคู่กัน (จานสี + ช่องพิมพ์ HEX) แก้ตัวไหนต้องวิ่งตามกันด้วย
+function editField(t){
+  if(!state.edit || !t || !t.dataset || !t.dataset.f) return;
+  const k = t.dataset.f;
+  state.edit.form[k] = t.value;
+  if(k === 'color'){
+    document.querySelectorAll('[data-f="color"]').forEach(o => { if(o !== t) o.value = t.value; });
+  }
+}
+
+// เก็บค่าฟอร์มไว้ใน state ทันทีที่พิมพ์ (กัน re-render แล้วค่าหาย)
+document.addEventListener('input', (e) => {
+  if(e.target.id === 'fPerson') state.person = e.target.value;
+  if(e.target.id === 'fNote')   state.note   = e.target.value;
+  if(e.target.id === 'hSearch') state.hq     = e.target.value;
+  if(state.adjust){
+    if(e.target.id === 'adjQty')  state.adjust.qty  = e.target.value;
+    if(e.target.id === 'adjNote') state.adjust.note = e.target.value;
+  }
+  editField(e.target);        // เฟส 4: ฟอร์มรายการ PPE
+  dbgRefresh();
+});
+document.addEventListener('keydown', (e) => {
+  if(e.key !== 'Enter') return;
+  if(e.target.id === 'pinInput'){
+    const b = document.querySelector('[data-act="pin"]'); if(b) b.click();
+  }
+  if(e.target.id === 'hSearch'){
+    const b = document.querySelector('[data-act="hsearch"]'); if(b) b.click();
+  }
+  if(e.target.id === 'adjQty' || e.target.id === 'adjNote'){
+    const b = document.querySelector('[data-act="adjSave"]'); if(b) b.click();
+  }
+});
+
+/* ============================================================
+   8) INIT
+   ============================================================ */
+async function boot(){
+  state.loading = true; render();
+  try{
+    await loadItems();
+    await loadAdminData();     // ถือรหัสแม่ = โหลดประวัติ+movement ไว้ใช้หน้าคลัง/ประวัติ
+    state.err = null;
+  }catch(ex){
+    state.err = ex.message || String(ex);
+    dlog('ERROR', 'โหลดข้อมูลไม่ได้: ' + state.err, true);
+  }
+  state.loading = false; render();
+}
+
+async function start(){
+  state.ready = true;
+  if(!configured()){
+    dlog('BOOT', 'ยังไม่ได้ตั้งค่า SUPABASE_URL / ANON_KEY', true);
+    render(); return;
+  }
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  dlog('BOOT', 'สร้าง Supabase client แล้ว · ดึงตัวเลขแดชบอร์ด (ไม่ต้องใช้รหัส)');
+  // แดชบอร์ดต้องขึ้นทันทีตั้งแต่เปิดหน้า ส่วนข้อมูลที่ต้องใช้รหัสค่อยโหลดตอนใส่รหัส
+  try{
+    await loadDashboard();
+    state.err = null;
+  }catch(ex){
+    state.err = ex.message || String(ex);
+    dlog('ERROR', 'โหลดแดชบอร์ดไม่สำเร็จ: ' + state.err, true);
+  }
+  state.loading = false;
+  render();
+}
+
+/* ============================================================
+   9) TEST SUITE (?test=1) — ทดสอบเฉพาะ logic ที่ไม่แตะ DOM
+   ============================================================ */
+const tests = [];
+function test(n, fn){ tests.push({n, fn}); }
+function assertEq(a, b, m){
+  if(JSON.stringify(a) !== JSON.stringify(b)) throw new Error(m || `${JSON.stringify(a)} != ${JSON.stringify(b)}`);
+}
+const ITM = [
+  {id:'helmet', name:'หมวกนิรภัย', unit:'ใบ', stock:14, min:10},
+  {id:'mask',   name:'หน้ากาก N95', unit:'ชิ้น', stock:0,  min:100},
+  {id:'boots',  name:'รองเท้าเซฟตี้', unit:'คู่', stock:6,  min:10}
+];
+
+test('fmtD แปลงวันที่เป็นไทย', () => assertEq(fmtD('2026-07-19'), '19 ก.ค. 2026'));
+test('fmtD รับค่าว่าง', () => assertEq(fmtD(''), '—'));
+test('fmtD รับ null', () => assertEq(fmtD(null), '—'));
+test('fmtD ตัด timestamp ได้', () => assertEq(fmtD('2026-01-05T10:22:00Z'), '5 ม.ค. 2026'));
+test('fmtM แปลงเดือน', () => assertEq(fmtM('2026-12'), 'ธ.ค. 2026'));
+test('todayISO รูปแบบถูก', () => assertEq(todayISO(new Date(2026,0,9)), '2026-01-09'));
+
+test('statusOf ปกติ', () => assertEq(statusOf({stock:14,min:10})[0], 'ปกติ'));
+test('statusOf ใกล้หมด ที่ขอบ min*1.2', () => assertEq(statusOf({stock:12,min:10})[0], 'ใกล้หมด'));
+test('statusOf ต่ำกว่าขั้นต่ำ', () => assertEq(statusOf({stock:6,min:10})[0], 'ต่ำกว่าขั้นต่ำ'));
+test('statusOf หมดเกลี้ยง', () => assertEq(statusOf({stock:0,min:10})[0], 'หมด'));
+test('statusOf รับ null', () => assertEq(statusOf(null)[0], '—'));
+
+test('validateReq ผ่านปกติ', () => assertEq(validateReq('สมชาย', {helmet:2}, ITM), null));
+test('validateReq ไม่ใส่ชื่อ', () => assertEq(validateReq('', {helmet:2}, ITM), 'กรุณาระบุชื่อผู้เบิก'));
+test('validateReq ชื่อเป็นช่องว่าง', () => assertEq(validateReq('   ', {helmet:1}, ITM), 'กรุณาระบุชื่อผู้เบิก'));
+test('validateReq ตะกร้าว่าง', () => assertEq(validateReq('สมชาย', {}, ITM), 'ยังไม่ได้เลือกรายการ'));
+test('validateReq สต็อกไม่พอ', () => {
+  const r = validateReq('สมชาย', {boots:99}, ITM);
+  assertEq(r, 'สต็อก "รองเท้าเซฟตี้" ไม่พอ (เหลือ 6 คู่)');
+});
+test('validateReq เบิกของที่หมดแล้ว', () => {
+  const r = validateReq('สมชาย', {mask:1}, ITM);
+  assertEq(r, 'สต็อก "หน้ากาก N95" ไม่พอ (เหลือ 0 ชิ้น)');
+});
+test('validateReq จำนวนเป็น 0', () => assertEq(validateReq('สมชาย', {helmet:0}, ITM), 'จำนวนต้องมากกว่า 0'));
+test('validateReq เบิกพอดีสต็อกที่มี', () => assertEq(validateReq('สมชาย', {boots:6}, ITM), null));
+test('validateReq ไม่พบรายการ', () => assertEq(validateReq('สมชาย', {ghost:1}, ITM), 'ไม่พบรายการ ghost'));
+
+test('esc กัน XSS', () => assertEq(esc('<img src=x onerror=alert(1)>'), '&lt;img src=x onerror=alert(1)&gt;'));
+test('esc รับ null', () => assertEq(esc(null), ''));
+
+/* ---------- เฟส 2: สรุปยอด/กราฟ/แจ้งเตือน ---------- */
+const HIST = [
+  {id:'REQ-1', person:'สมชาย', created_at:'2026-07-19T02:00:00Z', req_date:'2026-07-19',
+   lines:[{item_id:'helmet',name:'หมวกนิรภัย',unit:'ใบ',qty:2},{item_id:'mask',name:'หน้ากาก N95',unit:'ชิ้น',qty:5}]},
+  // UTC ยังเป็นวันที่ 18 แต่เวลาไทย 06:30 ของวันที่ 19 แล้ว -> ต้องนับเป็นวันที่ 19
+  {id:'REQ-2', person:'สมหญิง', created_at:'2026-07-18T23:30:00Z', req_date:'2026-07-18',
+   lines:[{item_id:'helmet',name:'หมวกนิรภัย',unit:'ใบ',qty:3}]},
+  {id:'REQ-3', person:'ชัย', created_at:'2026-06-30T10:00:00Z', req_date:'2026-06-30',
+   lines:[{item_id:'boots',name:'รองเท้าเซฟตี้',unit:'คู่',qty:1}]}
+];
+const ITM2 = [
+  {id:'a', name:'ก', stock:10, min:5, expiry:'2026-06'},
+  {id:'b', name:'ข', stock:10, min:5, expiry:'2026-09'},
+  {id:'c', name:'ค', stock:10, min:5, expiry:'2027-01'},
+  {id:'d', name:'ง', stock:10, min:5, expiry:null}
+];
+
+test('dayKeyTH บวก 7 ชม. ข้ามวันถูก', () => assertEq(dayKeyTH('2026-07-18T23:30:00Z'), '2026-07-19'));
+test('dayKeyTH ไม่ข้ามวันเมื่อยังไม่ถึง', () => assertEq(dayKeyTH('2026-07-18T10:00:00Z'), '2026-07-18'));
+test('dayKeyTH รับค่าว่าง', () => assertEq(dayKeyTH(null), ''));
+test('recDay ถอยไปใช้ req_date เมื่อไม่มี created_at',
+  () => assertEq(recDay({req_date:'2026-05-04'}), '2026-05-04'));
+test('reqTotal รวมจำนวนในใบ', () => assertEq(reqTotal(HIST[0]), 7));
+test('reqTotal ใบไม่มีรายการ', () => assertEq(reqTotal({lines:[]}), 0));
+
+test('daysInMonth ก.พ. ปีปกติ', () => assertEq(daysInMonth('2026-02'), 28));
+test('daysInMonth ก.พ. ปีอธิกสุรทิน', () => assertEq(daysInMonth('2024-02'), 29));
+test('daysInMonth ค่าผิดรูปแบบ', () => assertEq(daysInMonth('xxx'), 0));
+
+test('monthDiff เดินหน้า', () => assertEq(monthDiff('2026-07','2026-09'), 2));
+test('monthDiff ข้ามปี', () => assertEq(monthDiff('2026-11','2027-01'), 2));
+test('monthDiff ค่าผิดรูปแบบ', () => assertEq(monthDiff('2026-07',null), null));
+
+test('expiryOf ไม่มีวันหมดอายุ', () => assertEq(expiryOf(null,'2026-07'), null));
+test('expiryOf หมดอายุแล้ว', () => assertEq(expiryOf('2026-06','2026-07')[0], 'หมดอายุแล้ว'));
+test('expiryOf หมดอายุเดือนนี้', () => assertEq(expiryOf('2026-07','2026-07')[0], 'หมดอายุเดือนนี้'));
+test('expiryOf ใกล้หมดอายุที่ขอบ 3 เดือน', () => assertEq(expiryOf('2026-10','2026-07')[1], 'badge-warn'));
+test('expiryOf ปกติที่ 4 เดือน', () => assertEq(expiryOf('2026-11','2026-07')[0], 'ปกติ'));
+
+test('lowItems นับเฉพาะที่ต้องเติม', () => assertEq(lowItems(ITM).length, 2));
+test('expiringItems นับหมดอายุแล้ว+ใกล้หมด', () => {
+  assertEq(expiringItems(ITM2,'2026-07',3).map(i => i.id), ['a','b']);
+});
+
+/* ---------- แดชบอร์ดแบบไม่ต้องใส่รหัส ---------- */
+const DASH = {
+  today_date:'2026-07-19', req_count:3,
+  items:[
+    {id:'helmet', name:'หมวกนิรภัย', cat:'ศีรษะ', color:'#f4b400', unit:'ใบ', stock:14, min_stock:10},
+    {id:'boots',  name:'รองเท้าเซฟตี้', cat:'เท้า', color:'#26292e', unit:'คู่', stock:6,  min_stock:10}
+  ],
+  today:[{item_id:'helmet', name:'หมวกนิรภัย', qty:5}, {item_id:'boots', name:'รองเท้าเซฟตี้', qty:2}],
+  daily:[{d:'2026-06-10', qty:13}, {d:'2026-07-19', qty:7}, {d:'2026-07-19', qty:3}]
+};
+
+test('canAccess แดชบอร์ดเข้าได้แม้ไม่มีรหัส', () => assertEq(canAccess('open', null), true));
+test('canAccess หน้าเบิกยังต้องมีรหัสเหมือนเดิม', () => assertEq(canAccess('issue', null), false));
+test('canAccess หน้าแอดมินยังต้องรหัสแม่เหมือนเดิม', () => assertEq(canAccess('admin', 'issue'), false));
+
+test('dashItems แปลง min_stock เป็น min ให้ statusOf ใช้ได้', () => {
+  assertEq(dashItems(DASH).map(x => x.min), [10,10]);
+});
+test('dashItems รับค่าว่าง', () => assertEq(dashItems(null), []));
+test('lowItems ทำงานกับข้อมูลแดชบอร์ด', () => assertEq(lowItems(dashItems(DASH)).length, 1));
+test('dashTodayRows แปลง item_id เป็น id', () => assertEq(dashTodayRows(DASH)[0].id, 'helmet'));
+test('dashTodayRows รับค่าว่าง', () => assertEq(dashTodayRows(null), []));
+
+test('seriesFromDaily เติมวันครบทั้งเดือน', () => assertEq(seriesFromDaily(DASH.daily,'2026-07').length, 31));
+test('seriesFromDaily รวมยอดวันซ้ำเข้าด้วยกัน', () => assertEq(seriesFromDaily(DASH.daily,'2026-07')[18].qty, 10));
+test('seriesFromDaily วันที่ไม่มีการเบิกเป็น 0', () => assertEq(seriesFromDaily(DASH.daily,'2026-07')[0].qty, 0));
+test('seriesFromDaily ไม่เอาเดือนอื่นมาปน', () => {
+  assertEq(seriesFromDaily(DASH.daily,'2026-07').reduce((a,s)=>a+s.qty,0), 10);
+});
+test('seriesFromDaily เดือน มิ.ย. มี 30 วันและยอดตรง', () => {
+  const s = seriesFromDaily(DASH.daily,'2026-06');
+  assertEq([s.length, s[9].qty], [30, 13]);
+});
+test('seriesFromDaily รับ daily ว่าง', () => assertEq(seriesFromDaily([], '2026-07').length, 31));
+test('seriesFromDaily เดือนผิดรูปแบบ', () => assertEq(seriesFromDaily(DASH.daily,'xx'), []));
+
+test('monthListFromDaily เรียงใหม่ไปเก่า + มีเดือนปัจจุบัน', () => {
+  assertEq(monthListFromDaily(DASH.daily,'2026-08-02'), ['2026-08','2026-07','2026-06']);
+});
+test('monthListFromDaily ไม่มีข้อมูลก็ยังมีเดือนปัจจุบัน', () => {
+  assertEq(monthListFromDaily([], '2026-07-19'), ['2026-07']);
+});
+
+test('filterHistory ค้นด้วยเลขที่ใบ', () => assertEq(filterHistory(HIST,'req-2').length, 1));
+test('filterHistory ค้นด้วยชื่อผู้เบิก', () => assertEq(filterHistory(HIST,'สมชาย')[0].id, 'REQ-1'));
+test('filterHistory ค้นด้วยชื่อรายการ', () => assertEq(filterHistory(HIST,'รองเท้า')[0].id, 'REQ-3'));
+test('filterHistory คำค้นว่างคืนทั้งหมด', () => assertEq(filterHistory(HIST,'  ').length, 3));
+test('filterHistory ไม่เจอ', () => assertEq(filterHistory(HIST,'zzz'), []));
+
+/* ---------- เฟส 4: ฟอร์มจัดการรายการ PPE ---------- */
+const FITM = [
+  {id:'helmet', name:'หมวกนิรภัย', cat:'ป้องกันศีรษะ', model:'helmet', color:'#f4b400',
+   unit:'ใบ', stock:14, min:10, target:24, expiry:'2028-03', cycle:36, last:'2025-03', sort:1}
+];
+const OKF = () => itemToForm(FITM[0]);
+
+test('itemToForm ฟอร์มเปล่ามีค่าตั้งต้นครบ', () => {
+  const f = itemToForm(null);
+  assertEq([f.id, f.model, f.unit, f.min_stock, f.cycle_m], ['', 'helmet', 'ชิ้น', '0', '12']);
+});
+test('itemToForm อ่านลำดับเดิมมาด้วย (กันเขียนทับเป็น 0)', () => assertEq(OKF().sort_order, '1'));
+test('itemToForm แปลง min/cycle/last ให้ตรงชื่อคีย์ของ RPC', () => {
+  const f = OKF();
+  assertEq([f.min_stock, f.cycle_m, f.last_replaced], ['10', '36', '2025-03']);
+});
+test('itemToForm รายการที่ไม่มีวันหมดอายุได้ค่าว่าง ไม่ใช่ null', () => {
+  assertEq(itemToForm({id:'x',min:0,target:0,cycle:12}).expiry, '');
+});
+
+test('validateItem ฟอร์มถูกต้องผ่าน', () => assertEq(validateItem(OKF(), FITM, false), null));
+test('validateItem ไม่มีรหัส', () => assertEq(validateItem({...OKF(), id:''}, FITM, true), 'กรุณาระบุรหัสรายการ'));
+test('validateItem รหัสมีภาษาไทยไม่ผ่าน', () => {
+  assertEq(validateItem({...OKF(), id:'ถุงมือ'}, FITM, true) !== null, true);
+});
+test('validateItem รหัสมีเว้นวรรคไม่ผ่าน', () => {
+  assertEq(validateItem({...OKF(), id:'new item'}, FITM, true) !== null, true);
+});
+test('validateItem รหัสตัวพิมพ์ใหญ่ไม่ผ่าน', () => {
+  assertEq(validateItem({...OKF(), id:'Helmet2'}, FITM, true) !== null, true);
+});
+test('validateItem รายการใหม่ที่รหัสซ้ำไม่ผ่าน', () => {
+  assertEq(validateItem({...OKF(), id:'helmet'}, FITM, true), 'รหัส "helmet" มีอยู่แล้ว กรุณาใช้รหัสอื่น');
+});
+test('validateItem แก้ของเดิม รหัสซ้ำตัวเองต้องผ่าน', () => {
+  assertEq(validateItem(OKF(), FITM, false), null);
+});
+test('validateItem ไม่มีชื่อ', () => assertEq(validateItem({...OKF(), name:'  '}, FITM, false), 'กรุณาระบุชื่อรายการ'));
+test('validateItem ไม่มีหมวด', () => assertEq(validateItem({...OKF(), cat:''}, FITM, false), 'กรุณาระบุหมวดการป้องกัน'));
+test('validateItem ไม่มีหน่วยนับ', () => assertEq(validateItem({...OKF(), unit:''}, FITM, false), 'กรุณาระบุหน่วยนับ'));
+test('validateItem สีไม่ใช่ HEX 6 หลัก', () => {
+  assertEq(validateItem({...OKF(), color:'เหลือง'}, FITM, false) !== null, true);
+});
+test('validateItem สี HEX 3 หลักไม่ผ่าน (DB เก็บ 6 หลัก)', () => {
+  assertEq(validateItem({...OKF(), color:'#fff'}, FITM, false) !== null, true);
+});
+test('validateItem ขั้นต่ำติดลบไม่ผ่าน', () => {
+  assertEq(validateItem({...OKF(), min_stock:'-1'}, FITM, false), 'ขั้นต่ำ ต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป');
+});
+test('validateItem ขั้นต่ำเป็นทศนิยมไม่ผ่าน', () => {
+  assertEq(validateItem({...OKF(), min_stock:'2.5'}, FITM, false) !== null, true);
+});
+test('validateItem ขั้นต่ำเว้นว่างไม่ผ่าน', () => {
+  assertEq(validateItem({...OKF(), min_stock:''}, FITM, false) !== null, true);
+});
+test('validateItem ขั้นต่ำ 0 ผ่านได้', () => assertEq(validateItem({...OKF(), min_stock:'0'}, FITM, false), null));
+test('validateItem ลำดับติดลบไม่ผ่าน', () => {
+  assertEq(validateItem({...OKF(), sort_order:'-3'}, FITM, false), 'ลำดับ ต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป');
+});
+test('validateItem วันหมดอายุเว้นว่างได้', () => assertEq(validateItem({...OKF(), expiry:''}, FITM, false), null));
+test('validateItem วันหมดอายุใส่วันที่เต็มไม่ผ่าน', () => {
+  assertEq(validateItem({...OKF(), expiry:'2027-06-01'}, FITM, false) !== null, true);
+});
+test('validateItem เดือน 13 ไม่ผ่าน', () => {
+  assertEq(validateItem({...OKF(), expiry:'2027-13'}, FITM, false) !== null, true);
+});
+test('validateItem เดือน 00 ไม่ผ่าน', () => {
+  assertEq(validateItem({...OKF(), expiry:'2027-00'}, FITM, false) !== null, true);
+});
+test('validateItem เปลี่ยนล่าสุดผิดรูปแบบไม่ผ่าน', () => {
+  assertEq(validateItem({...OKF(), last_replaced:'มี.ค. 2568'}, FITM, false) !== null, true);
+});
+test('validateItem ฟอร์มว่างเปล่าไม่พัง', () => assertEq(validateItem({}, FITM, true), 'กรุณาระบุรหัสรายการ'));
+test('validateItem ส่ง null ไม่พัง', () => assertEq(validateItem(null, FITM, true), 'กรุณาระบุรหัสรายการ'));
+test('validateItem items เป็น null ไม่พัง', () => assertEq(validateItem(OKF(), null, true), null));
+test('validateItem ฟอร์มเปล่าจากปุ่มเพิ่มใหม่ ติดแค่ชื่อ/หมวดที่ยังไม่กรอก', () => {
+  const f = itemToForm(null); f.id = 'apron';
+  assertEq(validateItem(f, FITM, true), 'กรุณาระบุชื่อรายการ');
+});
+test('MODELS ตรงกับ BUILDERS ใน story.html ครบ 7 ตัว', () => {
+  assertEq(MODELS.map(m => m[0]), ['helmet','glasses','earmuff','mask','gloves','vest','boots']);
+});
+
+function runTests(){
+  let pass = 0; const fails = [];
+  tests.forEach(t => { try{ t.fn(); pass++; }catch(ex){ fails.push(t.n + ' → ' + ex.message); } });
+  const ok = fails.length === 0;
+  document.body.innerHTML = `<div style="padding:32px;font-family:Kanit,sans-serif;color:#eceded">
+    <div style="font-size:24px;font-weight:800;color:${ok?'#2fbf5f':'#e02424'};margin-bottom:8px">
+      ${ok?'✓ ผ่านทั้งหมด':'✗ มีที่ไม่ผ่าน'} ${pass}/${tests.length}</div>
+    ${fails.map(f => `<div style="color:#ff6b6b;font-size:14px;margin:6px 0">✗ ${esc(f)}</div>`).join('')}
+    <div style="color:#6b6e77;font-size:13px;margin-top:18px">เอา ?test=1 ออกจาก URL เพื่อกลับไปหน้าระบบ</div></div>`;
+}
+
+if(new URLSearchParams(location.search).get('test') === '1') runTests();
+else start();
+</script>
+</body>
+</html>

@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>วิธีเบิก PPE ด้วยตัวเอง — คู่มือหน้างาน A4</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* ============================================================
+     คู่มือหน้างาน A4 — พื้นขาว ตัวหนังสือดำ สำหรับพิมพ์ติดบอร์ดหน้าคลัง
+     หน่วยขนาดตัวหนังสือใช้ pt เพราะ 1pt เรนเดอร์เท่ากันทั้งจอและกระดาษ
+     ============================================================ */
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:#e9e9e9}
+  body{
+    font-family:'Sarabun',system-ui,sans-serif;
+    color:#000;
+    padding:14px 0;
+  }
+  .sheet{
+    width:186mm;              /* = 210mm - 12mm*2 (margin หน้ากระดาษ) */
+    min-height:273mm;         /* = 297mm - 12mm*2 */
+    background:#fff;
+    box-shadow:0 2px 14px rgba(0,0,0,.25);
+    padding:0;
+    margin:0 auto;
+  }
+  .inner{ padding:5mm 9mm 5mm; }
+
+  /* ---------- ส่วนหัว ---------- */
+  .head{ display:flex; align-items:center; gap:12pt; border-bottom:3px solid #000; padding-bottom:7pt; margin-bottom:9pt; }
+  .head .mark{
+    width:42pt;height:42pt;border-radius:10pt;background:#000;color:#fff;flex:none;
+    display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17pt;letter-spacing:-.02em;
+  }
+  .head .tt small{ display:block; font-size:9.7pt; letter-spacing:.24em; color:#444; font-weight:700; text-transform:uppercase; margin-bottom:1pt; }
+  .head .tt h1{ font-size:26pt; font-weight:800; letter-spacing:-.01em; line-height:1.15; }
+  .head .tt p{ font-size:11pt; color:#333; margin-top:2pt; font-weight:500; }
+
+  /* ---------- ขั้นตอน ---------- */
+  .steps{ display:flex; flex-direction:column; gap:7pt; margin-bottom:7pt; }
+  .step{ display:flex; gap:12pt; border:1.6pt solid #000; border-radius:9pt; padding:7pt 13pt; }
+  .step .num{
+    flex:none; width:30pt; height:30pt; border-radius:50%; border:2pt solid #000;
+    display:flex; align-items:center; justify-content:center; font-size:15pt; font-weight:800;
+  }
+  .step .body{ flex:1; min-width:0; }
+  .step h2{ font-size:15pt; font-weight:700; margin-bottom:3pt; }
+  .step ul{ list-style:none; }
+  .step li{ font-size:11pt; line-height:1.48; padding-left:14pt; position:relative; }
+  .step li::before{ content:'•'; position:absolute; left:1pt; font-weight:700; }
+  .step .hint{
+    margin-top:5pt; font-size:9.8pt; color:#333; background:#f2f2f2; border-left:3pt solid #000;
+    padding:4pt 9pt; line-height:1.45;
+  }
+  .step.warn{ border-width:2.2pt; }
+  .step.warn .num{ background:#000; color:#fff; }
+  .step .alert{
+    margin-top:6pt; font-size:10.8pt; font-weight:700; border:1.6pt dashed #000; border-radius:6pt;
+    padding:6pt 10pt; line-height:1.45;
+  }
+
+  /* ---------- รายการ PPE ที่เบิกได้ ---------- */
+  .catalog{ border-top:1.2pt solid #000; border-bottom:1.2pt solid #000; padding:5pt 0; margin-bottom:7pt; }
+  .catalog .lbl{ font-size:9.3pt; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:#444; margin-bottom:3pt; }
+  .catalog .row{ display:flex; flex-wrap:wrap; gap:5pt 16pt; font-size:11pt; font-weight:600; }
+  .catalog .row span b{ font-weight:400; color:#555; font-size:9.7pt; }
+
+  /* ---------- ข้อควรรู้ ---------- */
+  .notice{ margin-bottom:7pt; }
+  .notice h2{ font-size:15pt; font-weight:800; margin-bottom:5pt; display:flex; align-items:center; gap:7pt; }
+  .notice h2 .flag{
+    display:inline-flex; width:21pt; height:21pt; border:2pt solid #000; border-radius:50%;
+    align-items:center; justify-content:center; font-size:12.5pt; font-weight:800;
+  }
+  .notice ol{ list-style:none; counter-reset:n; }
+  .notice li{
+    counter-increment:n; font-size:11pt; line-height:1.48; padding:4pt 0 4pt 23pt; position:relative;
+    border-bottom:0.8pt solid #ddd;
+  }
+  .notice li:last-child{ border-bottom:0; }
+  .notice li::before{
+    content:counter(n); position:absolute; left:0; top:4pt; width:16.5pt; height:16.5pt; border-radius:50%;
+    border:1.4pt solid #000; font-size:9.8pt; font-weight:800; display:flex; align-items:center; justify-content:center;
+  }
+  .notice li b{ font-weight:700; }
+
+  /* ---------- ท้ายเอกสาร: QR / ติดต่อ / วันที่ ---------- */
+  .foot{ display:flex; gap:12pt; border-top:2pt solid #000; padding-top:6pt; }
+  .qrbox{
+    flex:none; width:80pt; height:80pt; border:1.6pt dashed #000; border-radius:6pt;
+    display:flex; align-items:center; justify-content:center; text-align:center;
+    font-size:9.2pt; color:#555; line-height:1.4; padding:4pt;
+  }
+  .foot .info{ flex:1; min-width:0; display:flex; flex-direction:column; gap:7pt; justify-content:center; }
+  .fld-line{ font-size:11pt; }
+  .fld-line b{ font-weight:700; }
+  .fld-line .blank{ display:inline-block; border-bottom:1pt dotted #666; min-width:70%; height:13pt; vertical-align:bottom; }
+  .fld-line .blank.short{ min-width:38%; }
+
+  /* ---------- จอ (screen) เท่านั้น: กันสับสนว่านี่คือหน้าตัวอย่าง ---------- */
+  .screen-note{
+    width:186mm; margin:0 auto 8px; text-align:center; font:600 11px/1.5 'Sarabun',sans-serif;
+    color:#555; background:#fff8d6; border:1px solid #e0c94a; border-radius:6px; padding:6px 10px;
+  }
+
+  /* ---------- พิมพ์ A4 ---------- */
+  @page{ size:A4; margin:12mm; }
+  @media print{
+    html,body{ background:#fff; padding:0; }
+    .sheet{ width:auto; min-height:auto; box-shadow:none; margin:0; }
+    .screen-note{ display:none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="screen-note noprint">หน้าตัวอย่าง — กด Ctrl+P เพื่อพิมพ์ลงกระดาษ A4 (ไม่ต้องปรับตั้งค่าเพิ่ม)</div>
+
+<div class="sheet">
+  <div class="inner">
+
+    <div class="head">
+      <div class="mark">SG</div>
+      <div class="tt">
+        <small>SAFEGEAR · ระบบเบิกจ่าย PPE</small>
+        <h1>วิธีเบิก PPE ด้วยตัวเอง</h1>
+        <p>ทำตาม 3 ขั้นตอนนี้บนหน้าจอ เบิกเองได้ ไม่ต้องรอคนสอน</p>
+      </div>
+    </div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="num">1</div>
+        <div class="body">
+          <h2>เลือกรายการ</h2>
+          <ul>
+            <li>หน้าจอจะโชว์การ์ด PPE แต่ละชิ้น พร้อมบอกจำนวนคงเหลือ</li>
+            <li>กดปุ่ม <b>+</b> หรือ <b>−</b> เพื่อเลือกจำนวนที่ต้องการของแต่ละชิ้น</li>
+            <li>เลือกครบแล้วกด <b>"ถัดไป →"</b></li>
+          </ul>
+          <div class="hint">ปุ่ม "ถัดไป →" จะกดไม่ได้ถ้ายังไม่เลือกอะไรเลย และกด + เกินจำนวนที่คงเหลือในคลังไม่ได้</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num">2</div>
+        <div class="body">
+          <h2>ระบุผู้เบิก</h2>
+          <ul>
+            <li>กรอกช่อง <b>"ชื่อผู้เบิก"</b> (บังคับ) — ใส่ชื่อ-สกุล และฝ่าย เช่น "สมชาย ใจดี (ฝ่ายผลิต)"</li>
+            <li>กรอกช่อง <b>"หมายเหตุ"</b> ได้ถ้ามี (ไม่บังคับ) เช่น "ทดแทนของชำรุด"</li>
+            <li>กรอกครบแล้วกด <b>"ถัดไป →"</b></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="step warn">
+        <div class="num">3</div>
+        <div class="body">
+          <h2>ตรวจและยืนยัน</h2>
+          <ul>
+            <li>ตรวจสอบสรุปรายการที่เลือกไว้ว่าถูกต้องครบถ้วน</li>
+            <li>ถูกต้องแล้วกด <b>"✓ ยืนยันการเบิก"</b></li>
+          </ul>
+          <div class="alert">กดยืนยันแล้ว สต็อกจะถูกตัดทันที และระบบจะออกเอกสารให้พิมพ์ทันที — ตรวจให้ดีก่อนกดทุกครั้ง</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="catalog">
+      <div class="lbl">รายการ PPE ที่เบิกได้ในระบบ <b style="font-weight:400">(อาจมีเพิ่ม — ยึดตามที่ขึ้นบนหน้าจอเป็นหลัก)</b></div>
+      <div class="row">
+        <span>หมวกนิรภัย <b>(ใบ)</b></span>
+        <span>แว่นนิรภัย <b>(อัน)</b></span>
+        <span>ถุงมือกันบาด <b>(คู่)</b></span>
+        <span>ที่ครอบหูลดเสียง <b>(อัน)</b></span>
+        <span>หน้ากาก N95 <b>(ชิ้น)</b></span>
+        <span>รองเท้าเซฟตี้ <b>(คู่)</b></span>
+        <span>เสื้อสะท้อนแสง <b>(ตัว)</b></span>
+      </div>
+    </div>
+
+    <div class="notice">
+      <h2><span class="flag">!</span> ข้อควรรู้ก่อนเบิก</h2>
+      <ol>
+        <li><b>ต้องใส่รหัสก่อนเข้าหน้าเบิก</b> — รหัสถามได้จากหัวหน้างานหรือ จป.</li>
+        <li><b>เบิกผิด</b> ให้แจ้ง จป. ทันที <b>ห้ามเบิกซ้ำเพื่อแก้เอง</b> เพราะสต็อกถูกตัดไปแล้ว</li>
+        <li>ของชิ้นไหนขึ้นสถานะ <b>"ใกล้หมด"</b> หรือ <b>"หมด"</b> ให้แจ้ง จป. เพื่อสั่งเติมของ</li>
+        <li>เอกสารที่ระบบออกให้ ให้พิมพ์หรือถ่ายรูปเก็บไว้ตามที่หัวหน้างานกำหนด</li>
+      </ol>
+    </div>
+
+    <div class="foot">
+      <div class="qrbox">แปะ QR<br>ตรงนี้</div>
+      <div class="info">
+        <div class="fld-line"><b>ลิงก์เว็บ:</b> <span class="blank"></span></div>
+        <div class="fld-line"><b>มีปัญหาการเบิก ติดต่อ:</b> <span class="blank short"></span> &nbsp; <b>เบอร์:</b> <span class="blank short"></span></div>
+        <div class="fld-line"><b>ประกาศใช้วันที่:</b> <span class="blank short"></span></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>
