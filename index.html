@@ -285,6 +285,12 @@ table.tb td.num{text-align:right;font-weight:700;color:var(--y);font-variant-num
 .storeact .inp{flex:1;margin-bottom:0}
 .storeissued{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13.5px;color:var(--tx2)}
 .storeundo{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;color:#ff6b6b;font-size:13px}
+.storeprint{margin-top:10px}
+/* แผงติดตามสถานะใบเบิก (หน้าเบิกของ จป) */
+.tracklist{display:flex;flex-direction:column;gap:8px}
+.trackrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 11px;background:var(--bg2);border:1px solid var(--line);border-radius:9px;font-size:13.5px}
+.trackrow .reqid{font-weight:700;color:var(--y);font-size:14px}
+.trackrow .sub{flex:1;min-width:0;color:var(--tx2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ---------- มือถือ ---------- */
 @media(max-width:860px){
@@ -1140,6 +1146,17 @@ function storeCounts(list){
   const issued = (list||[]).filter(r => r.status === 'issued').length;
   return { total:(list||[]).length, issued, pending:(list||[]).length - issued };
 }
+// แปลงใบเบิกฝั่งสโตร์ 1 ใบ -> slip สำหรับ viewDoc (ใช้พิมพ์ใบเซ็นรับของหน้าจ่าย)
+// ผู้จ่าย: จ่ายแล้ว = ชื่อคนจ่ายจริง / ยังไม่จ่าย = ว่างไว้ให้เซ็นเอง
+function storeSlip(r){
+  return {
+    id: r.id, date: recDay(r), person: r.person,
+    approver: r.status === 'issued' ? (r.issued_by || '') : '',
+    note: r.note || '',
+    lines: (r.lines||[]).map(l => ({ name:l.name, qty:l.qty, unit:l.unit })),
+    _src: 'store'   // ให้ viewDoc รู้ว่าปุ่มย้อนกลับต้องกลับหน้าสโตร์
+  };
+}
 
 function viewStore(){
   const list = state.store || [];
@@ -1186,6 +1203,7 @@ function viewStore(){
       <div class="storemeta">${esc(fmtD(recDay(r)))} · ผู้เบิก ${esc(r.person)}${r.note?` · <span style="color:var(--tx3)">${esc(r.note)}</span>`:''}</div>
       <div class="storelines">${lines}</div>
       ${action}
+      <div class="storeprint"><button class="btn ghost sm" data-act="storePrint" data-id="${esc(r.id)}">🖨️ พิมพ์ใบเซ็นรับของ</button></div>
     </div>`;
   }).join('');
 
@@ -1365,7 +1383,34 @@ function viewReq(){
   else if(state.reqStep === 2) body = stepPerson();
   else                         body = stepConfirm();
 
-  return `<div class="steps">${sHtml}</div>${body}`;
+  return `<div class="steps">${sHtml}</div>${state.reqStep === 1 ? reqTrackPanel() : ''}${body}`;
+}
+
+// แผงติดตามสถานะใบเบิก (read-only) บนหน้าเบิกของ จป — ดึงจาก state.store ที่โหลดไว้แล้ว
+// จป เห็นได้ว่าใบไหนสโตร์จ่ายแล้ว/ยังค้าง แต่ไม่มีปุ่มจ่าย (นั่นเป็นของแท็บสโตร์)
+function reqTrackPanel(){
+  const list = state.store || [];
+  if(!list.length) return '';
+  const c = storeCounts(list);
+  const rows = list.map(r => {
+    const [bl, bc] = dispenseBadge(r.status);
+    const sub = r.status === 'issued'
+      ? `จ่ายโดย ${esc(r.issued_by||'—')} · ${esc(fmtDT(r.issued_at))}`
+      : `ผู้เบิก ${esc(r.person)}`;
+    return `<div class="trackrow">
+      <span class="reqid">${esc(r.id)}</span>
+      <span class="sub">${sub}</span>
+      <span class="pill ${bc}">${bl}</span>
+    </div>`;
+  }).join('');
+  return `<div class="panel">
+    <div class="eyebrow">ติดตามสถานะใบเบิก</div>
+    <div class="storecount">
+      <span class="pill badge-warn">รอจ่าย ${c.pending} ใบ</span>
+      <span class="pill badge-ok">จ่ายแล้ว ${c.issued} ใบ</span>
+    </div>
+    <div class="tracklist">${rows}</div>
+  </div>`;
 }
 
 function stepPick(){
@@ -1466,7 +1511,9 @@ function viewDoc(){
 
   return `<div class="noprint" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">
       <button class="btn" data-act="print">🖨️ พิมพ์ / บันทึก PDF</button>
-      ${state.tab === 'history'
+      ${s._src === 'store'
+        ? `<button class="btn ghost" data-act="closeSlip">← กลับหน้าสโตร์</button>`
+        : state.tab === 'history'
         ? `<button class="btn ghost" data-act="closeSlip">← กลับไปหน้าประวัติ</button>`
         : `<button class="btn ghost" data-act="newreq">+ คีย์ใบเบิกใหม่</button>`}
     </div>
@@ -1482,7 +1529,7 @@ function viewDoc(){
       <div class="meta">
         <div><b>วันที่</b>${fmtD(s.date)}</div>
         <div><b>ผู้เบิก</b>${esc(s.person)}</div>
-        <div><b>ผู้จ่าย</b>${esc(s.approver)}</div>
+        <div><b>ผู้จ่าย</b>${esc(s.approver) || '—'}</div>
         <div><b>จำนวนรายการ</b>${s.lines.length} รายการ · รวม ${total} ชิ้น</div>
       </div>
       ${s.note ? `<div class="note"><b>หมายเหตุ:</b> ${esc(s.note)}</div>` : ''}
@@ -1493,7 +1540,7 @@ function viewDoc(){
       </table>
       <div class="signs">
         <div class="sign"><div class="ln"></div><small>ผู้รับของ<br>(${esc(s.person)})</small></div>
-        <div class="sign"><div class="ln"></div><small>ผู้จ่ายของ<br>(${esc(s.approver)})</small></div>
+        <div class="sign"><div class="ln"></div><small>ผู้จ่ายของ<br>(${esc(s.approver) || '      '})</small></div>
       </div>
       <p style="font-size:11px;color:#888;text-align:center;margin:26px 0 0">
         เอกสารนี้ออกจากระบบ SafeGear · พิมพ์เมื่อ ${fmtD(todayISO())} · สำหรับแผนกและสโตร์</p>
@@ -1637,6 +1684,15 @@ document.addEventListener('click', async (e) => {
     render();
   }
   else if(act === 'closeSlip'){ state.slip = null; render(); }
+
+  // สโตร์กดพิมพ์ใบเซ็นรับของ — ใช้ viewDoc ตัวเดียวกับ จป (ไม่เปลี่ยนสถานะจ่าย)
+  else if(act === 'storePrint'){
+    const r = (state.store||[]).find(x => x.id === el.dataset.id);
+    if(!r) return;
+    state.slip = storeSlip(r);
+    dlog('DOC', 'พิมพ์ใบเซ็นรับของ (สโตร์) ' + r.id);
+    render();
+  }
 
   /* ---------- แท็บสโตร์: จ่ายของ / ยกเลิกจ่าย ---------- */
   else if(act === 'storeDispense'){
@@ -2105,6 +2161,29 @@ test('fmtDT รับค่าว่าง', () => assertEq(fmtDT(''), '—'));
 test('fmtDT รับ null', () => assertEq(fmtDT(null), '—'));
 test('fmtDT แสดงวัน+เวลาไทย (+7 ชม.)', () => assertEq(fmtDT('2026-07-19T02:30:00Z'), '19 ก.ค. 2026 09:30 น.'));
 test('fmtDT ข้ามวันเมื่อ +7 ชม.', () => assertEq(fmtDT('2026-07-19T20:00:00Z'), '20 ก.ค. 2026 03:00 น.'));
+
+// storeSlip: แปลงใบเบิกฝั่งสโตร์ -> slip สำหรับพิมพ์ใบเซ็นรับ
+test('storeSlip ใบจ่ายแล้ว ผู้จ่าย=ชื่อคนจ่ายจริง', () => {
+  const s = storeSlip({id:'REQ-1', req_date:'2026-07-20', person:'สมชาย', status:'issued', issued_by:'ณัฐพล', note:'', lines:[{name:'หมวก',qty:2,unit:'ใบ'}]});
+  assertEq(s.approver, 'ณัฐพล');
+  assertEq(s._src, 'store');
+  assertEq(s.id, 'REQ-1');
+  assertEq(s.date, '2026-07-20');
+  assertEq(s.lines, [{name:'หมวก',qty:2,unit:'ใบ'}]);
+});
+test('storeSlip ใบรอจ่าย ผู้จ่าย=ว่าง', () => {
+  const s = storeSlip({id:'REQ-2', req_date:'2026-07-20', person:'สมหญิง', status:'pending', issued_by:null, note:'ด่วน', lines:[]});
+  assertEq(s.approver, '');
+  assertEq(s.note, 'ด่วน');
+});
+test('storeSlip lines=null ไม่พัง คืน []', () => {
+  const s = storeSlip({id:'REQ-3', req_date:'2026-07-20', person:'ก', status:'issued', issued_by:'ข', lines:null});
+  assertEq(s.lines, []);
+});
+test('storeSlip จ่ายแล้วแต่ issued_by ว่าง ผู้จ่าย=ว่าง', () => {
+  const s = storeSlip({id:'REQ-4', req_date:'2026-07-20', person:'ก', status:'issued', issued_by:'', lines:[]});
+  assertEq(s.approver, '');
+});
 
 function runTests(){
   let pass = 0; const fails = [];
