@@ -269,6 +269,23 @@ table.tb td.num{text-align:right;font-weight:700;color:var(--y);font-variant-num
 .mv .d.plus{color:var(--green)} .mv .d.minus{color:#ff6b6b}
 .mv .when{color:var(--tx3);font-size:12px;white-space:nowrap}
 
+/* ---------- แท็บสโตร์ (จ่ายของ) ---------- */
+.storecount{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:14px}
+.storelist{display:flex;flex-direction:column;gap:12px}
+.storecard{border:1px solid var(--line);border-radius:12px;padding:14px 15px;background:var(--bg2)}
+.storecard.pending{border-left:4px solid var(--orange)}
+.storecard.done{border-left:4px solid var(--green)}
+.storehead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.storehead .reqid{font-weight:700;color:var(--y);font-size:15px}
+.storemeta{font-size:13px;color:var(--tx2);margin-bottom:10px}
+.storelines{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+.storeline{display:flex;align-items:center;gap:8px;font-size:14px;padding:7px 10px;background:var(--card);border-radius:8px}
+.storeline .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.storeact{display:flex;gap:9px;align-items:stretch}
+.storeact .inp{flex:1;margin-bottom:0}
+.storeissued{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13.5px;color:var(--tx2)}
+.storeundo{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;color:#ff6b6b;font-size:13px}
+
 /* ---------- มือถือ ---------- */
 @media(max-width:860px){
   #side{display:none}
@@ -378,6 +395,7 @@ const APPROVER_DEFAULT = 'จป.วิชาชีพ';
 //   'admin' = รหัสแม่เท่านั้น
 const TABS = {
   req:     ['เบิก–จ่าย PPE','คีย์ใบเบิกและรับของ','📋','issue'],
+  store:   ['สโตร์–จ่ายของ','รับใบเบิกและบันทึกผู้จ่าย','🏬','issue'],
   dash:    ['แดชบอร์ด','สรุปยอดเบิกและกราฟ','📊','open'],
   stock:   ['คลัง PPE','สต็อก วันหมดอายุ รอบเปลี่ยน','📦','admin'],
   history: ['ประวัติการเบิก','ย้อนดูและพิมพ์เอกสารซ้ำ','🕘','admin']
@@ -409,7 +427,11 @@ const state = {
   hq:'',                     // คำค้นในหน้าประวัติ
   adjust:null,               // { itemId, delta, reason, note, err } = modal ปรับยอด
   edit:null,                 // { form, isNew, err, confirmHide } = modal จัดการรายการ PPE (เฟส 4)
-  p2loaded:false             // โหลดข้อมูลฝั่ง admin แล้วหรือยัง
+  p2loaded:false,            // โหลดข้อมูลฝั่ง admin แล้วหรือยัง
+  // ---- แท็บสโตร์ (จ่ายของ) ----
+  store:[],                  // ใบเบิกทั้งหมดพร้อมสถานะจ่าย (store_get_requisitions)
+  storeMsg:null,             // { ok:bool, text } = แถบแจ้งผลจ่าย/ยกเลิกจ่าย
+  storeConfirm:null          // REQ id ที่กำลังถามยืนยันยกเลิกจ่าย (รหัสแม่)
 };
 // รหัสเก็บในหน่วยความจำเท่านั้น รีเฟรช = ลืม (ไม่เขียนลง localStorage เด็ดขาด)
 // ต้องเก็บตัวรหัสไว้เพราะ RPC ทุกตัวต้องส่งรหัสไปให้ Postgres ตรวจซ้ำทุกครั้ง
@@ -672,6 +694,34 @@ async function submitReq(){
   return data;
 }
 
+// แท็บสโตร์: รายการใบเบิกพร้อมสถานะจ่าย — เปิดด้วยรหัสเบิกหรือรหัสแม่
+async function loadStore(){
+  if(!userPin){ state.store = []; return; }
+  const { data, error } = await sb.rpc('store_get_requisitions', { p_pin: userPin, p_limit: 1000 });
+  if(error) throw error;
+  state.store = data || [];
+  const pend = state.store.filter(r => r.status !== 'issued').length;
+  dlog('LOAD', `โหลดใบเบิกฝั่งสโตร์ ${state.store.length} ใบ (รอจ่าย ${pend})`);
+}
+// สโตร์กดจ่ายของ — ตัดสต็อกจริงที่ DB
+async function dispenseReq(reqId, dispenser){
+  dlog('DISPENSE', `จ่าย ${reqId} โดย ${dispenser}`);
+  const { data, error } = await sb.rpc('store_dispense', {
+    p_pin: userPin, p_req_id: reqId, p_dispenser: dispenser
+  });
+  if(error) throw error;
+  return data;
+}
+// ยกเลิกการจ่าย — คืนสต็อก (รหัสแม่เท่านั้น DB เป็นคนตรวจ)
+async function undoDispenseReq(reqId){
+  dlog('DISPENSE', `ยกเลิกจ่าย ${reqId}`);
+  const { data, error } = await sb.rpc('store_undo_dispense', {
+    p_pin: userPin, p_req_id: reqId
+  });
+  if(error) throw error;
+  return data;
+}
+
 // แดชบอร์ด: RPC เดียวในระบบที่ไม่ต้องส่งรหัส — คืนแต่ตัวเลขรวม ไม่มีข้อมูลบุคคล
 async function loadDashboard(){
   const { data, error } = await sb.rpc('get_dashboard');
@@ -775,6 +825,7 @@ function render(){
   if(!canAccess(need, L))          html += viewPin(state.tab);   // ยังไม่มีสิทธิ์ -> ขอรหัสก่อน
   else if(state.slip)              html += viewDoc();            // เอกสาร (ใบใหม่ หรือ ใบเก่าจากประวัติ)
   else if(state.tab === 'req')     html += viewReq();
+  else if(state.tab === 'store')   html += viewStore();
   else if(state.tab === 'dash')    html += viewDash();
   else if(state.tab === 'stock')   html += viewStock();
   else if(state.tab === 'history') html += viewHistory();
@@ -1062,6 +1113,92 @@ function viewStock(){
     ${mv || '<div class="empty" style="padding:26px 12px">ยังไม่มีความเคลื่อนไหว</div>'}
   </div>
 
+  <button class="btn ghost sm" data-act="reload">↻ ดึงข้อมูลใหม่</button>`;
+}
+
+/* ---------- แท็บสโตร์: จ่ายของ + บันทึกผู้จ่าย ---------- */
+// วันที่+เวลาแบบไทย (เลื่อน +7 ชม.เหมือน dayKeyTH แล้วอ่านเวลาผนัง)
+function fmtDT(ts){
+  if(!ts) return '—';
+  const d = new Date(ts);
+  if(isNaN(d.getTime())) return fmtD(ts);
+  const th = new Date(d.getTime() + 7*3600*1000);
+  const hh = String(th.getUTCHours()).padStart(2,'0');
+  const mm = String(th.getUTCMinutes()).padStart(2,'0');
+  return fmtD(th.toISOString().slice(0,10)) + ' ' + hh + ':' + mm + ' น.';
+}
+// สถานะจ่าย: issued = จ่ายแล้ว (เขียว) · อื่นๆ = ยังไม่จ่าย (ส้ม)
+function dispenseBadge(status){
+  return status === 'issued' ? ['จ่ายแล้ว','badge-ok'] : ['ยังไม่จ่าย','badge-warn'];
+}
+// ชื่อผู้จ่ายห้ามว่าง
+function validateDispenser(name){
+  if(!name || !String(name).trim()) return 'กรุณาระบุชื่อผู้จ่าย';
+  return null;
+}
+function storeCounts(list){
+  const issued = (list||[]).filter(r => r.status === 'issued').length;
+  return { total:(list||[]).length, issued, pending:(list||[]).length - issued };
+}
+
+function viewStore(){
+  const list = state.store || [];
+  const c = storeCounts(list);
+  const isAdmin = state.pinLevel === 'admin';
+  const msg = state.storeMsg
+    ? `<div class="pill ${state.storeMsg.ok?'badge-ok':'badge-dang'}" style="margin:0 0 14px;white-space:normal;display:flex">${esc(state.storeMsg.text)}</div>`
+    : '';
+
+  const cards = list.map(r => {
+    const [bl, bc] = dispenseBadge(r.status);
+    const pending  = r.status !== 'issued';
+    const lines = (r.lines||[]).map(l =>
+      `<div class="storeline"><span class="nm">${esc(l.name)}</span><b>${l.qty}</b>&nbsp;<span style="color:var(--tx3)">${esc(l.unit)}</span></div>`
+    ).join('');
+
+    let action;
+    if(pending){
+      action = `<div class="storeact">
+        <input class="inp" id="disp-${esc(r.id)}" placeholder="ชื่อผู้จ่าย (สโตร์)" autocomplete="off">
+        <button class="btn sm" data-act="storeDispense" data-id="${esc(r.id)}" ${state.busy?'disabled':''}>✓ ยืนยันจ่าย</button>
+      </div>`;
+    } else {
+      const undo = !isAdmin ? '' : (state.storeConfirm === r.id
+        ? `<div class="storeundo">
+             <span>ยกเลิกการจ่ายใบนี้? สต็อกจะถูกคืนกลับ</span>
+             <div style="display:flex;gap:8px;flex:none">
+               <button class="btn ghost sm" data-act="storeUndoNo" ${state.busy?'disabled':''}>ไม่</button>
+               <button class="btn danger sm" data-act="storeUndoYes" data-id="${esc(r.id)}" ${state.busy?'disabled':''}>ยืนยันยกเลิก</button>
+             </div>
+           </div>`
+        : `<button class="btn ghost sm" data-act="storeUndoAsk" data-id="${esc(r.id)}">↩ ยกเลิกจ่าย</button>`);
+      action = `<div class="storeissued">
+        <span>จ่ายโดย <b>${esc(r.issued_by||'—')}</b> · ${esc(fmtDT(r.issued_at))}</span>
+        ${undo}
+      </div>`;
+    }
+
+    return `<div class="storecard ${pending?'pending':'done'}">
+      <div class="storehead">
+        <span class="reqid">${esc(r.id)}</span>
+        <span class="pill ${bc}">${bl}</span>
+      </div>
+      <div class="storemeta">${esc(fmtD(recDay(r)))} · ผู้เบิก ${esc(r.person)}${r.note?` · <span style="color:var(--tx3)">${esc(r.note)}</span>`:''}</div>
+      <div class="storelines">${lines}</div>
+      ${action}
+    </div>`;
+  }).join('');
+
+  return `<div class="panel">
+    <div class="eyebrow">รายการเบิกที่ต้องจ่าย</div>
+    <div class="storecount">
+      <span class="pill badge-warn">รอจ่าย ${c.pending} ใบ</span>
+      <span class="pill badge-ok">จ่ายแล้ว ${c.issued} ใบ</span>
+    </div>
+    ${msg}
+    ${list.length ? `<div class="storelist">${cards}</div>`
+      : `<div class="empty"><div class="ic">🏬</div>ยังไม่มีใบเบิกในระบบ</div>`}
+  </div>
   <button class="btn ghost sm" data-act="reload">↻ ดึงข้อมูลใหม่</button>`;
 }
 
@@ -1373,6 +1510,7 @@ document.addEventListener('click', async (e) => {
 
   if(act === 'tab'){
     state.tab = el.dataset.tab; state.slip = null; state.pinMsg = null;
+    state.storeMsg = null; state.storeConfirm = null;   // ล้างแถบแจ้ง/ยืนยันของแท็บสโตร์
     render();
   }
 
@@ -1412,10 +1550,11 @@ document.addEventListener('click', async (e) => {
         approver: APPROVER_DEFAULT, note: state.note.trim(),
         lines: lines.map(l => ({ name:l.name, qty:l.qty, unit:l.unit }))
       };
-      dlog('OK', `บันทึกใบเบิก ${res.id} สำเร็จ${res.duplicate?' (ใบเดิม ไม่ตัดสต็อกซ้ำ)':''}`);
+      dlog('OK', `บันทึกใบเบิก ${res.id} สำเร็จ${res.duplicate?' (ใบเดิม)':''}`);
       state.cart = {}; state.person = ''; state.note = ''; state.reqStep = 1;
-      await loadItems();                       // ดึงสต็อกใหม่หลังตัด
-      await loadDashboard();                   // กราฟต้องเห็นใบที่เพิ่งคีย์ทันที
+      await loadItems();                       // สต็อกยังไม่ลด (ตัดตอนสโตร์จ่าย) แต่ refresh เผื่อมีคนจ่ายคู่ขนาน
+      await loadStore();                        // ใบใหม่ต้องขึ้นแท็บสโตร์เป็น "รอจ่าย" ทันที
+      await loadDashboard();                   // นับเฉพาะที่จ่ายแล้ว = ใบใหม่ยังไม่ขึ้นกราฟ (ตรงกับสต็อก)
       await loadAdminData();                   // ประวัติ/movement (เฉพาะรหัสแม่)
     }catch(ex){
       state.err = ex.message || String(ex);
@@ -1463,6 +1602,7 @@ document.addEventListener('click', async (e) => {
     // ล้างข้อมูลฝั่ง admin ออกจากหน่วยความจำด้วย ไม่ให้ค้างให้คนถัดไปเห็น
     state.history = []; state.moves = []; state.p2loaded = false;
     state.adjust = null; state.edit = null; state.hq = ''; state.month = null;
+    state.store = []; state.storeMsg = null; state.storeConfirm = null;
     dlog('PIN', 'ออกจากระบบ ลืมรหัสแล้ว');
     render();
   }
@@ -1472,7 +1612,7 @@ document.addEventListener('click', async (e) => {
     state.loading = true; state.err = null; render();
     try{
       await loadDashboard();                          // ตัวนี้ไม่ต้องใช้รหัส ดึงได้เสมอ
-      if(userPin){ await loadItems(); await loadAdminData(); }
+      if(userPin){ await loadItems(); await loadStore(); await loadAdminData(); }
     }
     catch(ex){ state.err = ex.message || String(ex); dlog('ERROR', state.err, true); }
     state.loading = false; render();
@@ -1497,6 +1637,55 @@ document.addEventListener('click', async (e) => {
     render();
   }
   else if(act === 'closeSlip'){ state.slip = null; render(); }
+
+  /* ---------- แท็บสโตร์: จ่ายของ / ยกเลิกจ่าย ---------- */
+  else if(act === 'storeDispense'){
+    const id   = el.dataset.id;
+    const name = ($('#disp-' + id) || {}).value || '';
+    const verr = validateDispenser(name);
+    if(verr){ state.storeMsg = {ok:false, text: verr}; render(); return; }
+
+    state.busy = true; state.storeMsg = null; state.storeConfirm = null; render();
+    try{
+      await dispenseReq(id, name.trim());
+      state.storeMsg = {ok:true, text:`✅ จ่าย ${id} สำเร็จ (โดย ${name.trim()})`};
+      dlog('OK', `จ่าย ${id} สำเร็จ`);
+      state.busy = false; state.loading = true; render();
+      await loadStore();                       // สถานะใบเปลี่ยนเป็นจ่ายแล้ว
+      await loadItems();                        // สต็อกเพิ่งถูกตัด
+      await loadDashboard();                    // ยอดจ่ายวันนี้ + KPI ต้องขยับ
+      await loadAdminData();                    // movement/ประวัติ (เฉพาะรหัสแม่)
+      state.loading = false;
+    }catch(ex){
+      state.busy = false; state.loading = false;
+      state.storeMsg = {ok:false, text: ex.message || String(ex)};
+      dlog('ERROR', 'จ่ายไม่สำเร็จ: ' + (ex.message||ex), true);
+    }
+    render();
+  }
+  else if(act === 'storeUndoAsk'){ state.storeConfirm = el.dataset.id; state.storeMsg = null; render(); }
+  else if(act === 'storeUndoNo'){  state.storeConfirm = null; render(); }
+  else if(act === 'storeUndoYes'){
+    if(state.pinLevel !== 'admin'){ state.storeMsg = {ok:false, text:'ยกเลิกจ่ายได้เฉพาะรหัสผู้ดูแล'}; render(); return; }
+    const id = el.dataset.id;
+    state.busy = true; state.storeMsg = null; render();
+    try{
+      await undoDispenseReq(id);
+      state.storeMsg = {ok:true, text:`↩ ยกเลิกจ่าย ${id} แล้ว · คืนสต็อกเรียบร้อย`};
+      dlog('OK', `ยกเลิกจ่าย ${id} สำเร็จ`);
+      state.busy = false; state.storeConfirm = null; state.loading = true; render();
+      await loadStore();
+      await loadItems();
+      await loadDashboard();
+      await loadAdminData();
+      state.loading = false;
+    }catch(ex){
+      state.busy = false; state.loading = false; state.storeConfirm = null;
+      state.storeMsg = {ok:false, text: ex.message || String(ex)};
+      dlog('ERROR', 'ยกเลิกจ่ายไม่สำเร็จ: ' + (ex.message||ex), true);
+    }
+    render();
+  }
 
   else if(act === 'adjOpen'){
     state.adjust = { itemId: el.dataset.id, mode:'receive', qty:'', note:'', err:null };
@@ -1643,6 +1832,7 @@ async function boot(){
   state.loading = true; render();
   try{
     await loadItems();
+    await loadStore();         // รายการใบเบิกฝั่งสโตร์ (รหัสเบิกหรือรหัสแม่ก็โหลดได้)
     await loadAdminData();     // ถือรหัสแม่ = โหลดประวัติ+movement ไว้ใช้หน้าคลัง/ประวัติ
     state.err = null;
   }catch(ex){
@@ -1893,6 +2083,28 @@ test('validateItem ฟอร์มเปล่าจากปุ่มเพิ�
 test('MODELS ตรงกับ BUILDERS ใน story.html ครบ 7 ตัว', () => {
   assertEq(MODELS.map(m => m[0]), ['helmet','glasses','earmuff','mask','gloves','vest','boots']);
 });
+
+/* ---------- แท็บสโตร์ ---------- */
+test('dispenseBadge จ่ายแล้ว = เขียว', () => assertEq(dispenseBadge('issued'), ['จ่ายแล้ว','badge-ok']));
+test('dispenseBadge ยังไม่จ่าย = ส้ม', () => assertEq(dispenseBadge('pending'), ['ยังไม่จ่าย','badge-warn']));
+test('dispenseBadge ค่าแปลก ถือว่ายังไม่จ่าย', () => assertEq(dispenseBadge(null)[0], 'ยังไม่จ่าย'));
+test('validateDispenser ชื่อปกติผ่าน', () => assertEq(validateDispenser('สมหญิง'), null));
+test('validateDispenser ว่างไม่ผ่าน', () => assertEq(validateDispenser(''), 'กรุณาระบุชื่อผู้จ่าย'));
+test('validateDispenser เว้นวรรคล้วนไม่ผ่าน', () => assertEq(validateDispenser('   '), 'กรุณาระบุชื่อผู้จ่าย'));
+test('validateDispenser รับ null ไม่พัง', () => assertEq(validateDispenser(null), 'กรุณาระบุชื่อผู้จ่าย'));
+test('storeCounts นับรอจ่าย/จ่ายแล้ว', () => {
+  const r = storeCounts([{status:'pending'},{status:'issued'},{status:'pending'}]);
+  assertEq([r.total, r.pending, r.issued], [3, 2, 1]);
+});
+test('storeCounts รายการว่างไม่พัง', () => {
+  const r = storeCounts([]);
+  assertEq([r.total, r.pending, r.issued], [0, 0, 0]);
+});
+test('storeCounts รับ null ไม่พัง', () => assertEq(storeCounts(null).total, 0));
+test('fmtDT รับค่าว่าง', () => assertEq(fmtDT(''), '—'));
+test('fmtDT รับ null', () => assertEq(fmtDT(null), '—'));
+test('fmtDT แสดงวัน+เวลาไทย (+7 ชม.)', () => assertEq(fmtDT('2026-07-19T02:30:00Z'), '19 ก.ค. 2026 09:30 น.'));
+test('fmtDT ข้ามวันเมื่อ +7 ชม.', () => assertEq(fmtDT('2026-07-19T20:00:00Z'), '20 ก.ค. 2026 03:00 น.'));
 
 function runTests(){
   let pass = 0; const fails = [];
