@@ -1188,6 +1188,15 @@ function fmtDT(ts){
   const mm = String(th.getUTCMinutes()).padStart(2,'0');
   return fmtD(th.toISOString().slice(0,10)) + ' ' + hh + ':' + mm + ' น.';
 }
+// เวลาแบบไทย (+7 ชม.) เฉพาะ ชม:นาที — ใช้ต่อท้ายวันที่บนหัวเอกสาร
+function fmtTimeTH(ts){
+  if(!ts) return '';
+  const d = new Date(ts);
+  if(isNaN(d.getTime())) return '';
+  const th = new Date(d.getTime() + 7*3600*1000);
+  return String(th.getUTCHours()).padStart(2,'0') + ':' +
+         String(th.getUTCMinutes()).padStart(2,'0') + ' น.';
+}
 // สถานะจ่าย: issued = จ่ายแล้ว (เขียว) · อื่นๆ = ยังไม่จ่าย (ส้ม)
 function dispenseBadge(status){
   return status === 'issued' ? ['จ่ายแล้ว','badge-ok'] : ['ยังไม่จ่าย','badge-warn'];
@@ -1205,7 +1214,7 @@ function storeCounts(list){
 // ผู้จ่าย: จ่ายแล้ว = ชื่อคนจ่ายจริง / ยังไม่จ่าย = ว่างไว้ให้เซ็นเอง
 function storeSlip(r){
   return {
-    id: r.id, date: recDay(r), person: r.person, dept: r.department || '',
+    id: r.id, date: recDay(r), ts: r.created_at || null, person: r.person, dept: r.department || '',
     approver: r.status === 'issued' ? (r.issued_by || '') : '',
     note: r.note || '',
     lines: (r.lines||[]).map(l => ({ name:l.name, qty:l.qty, unit:l.unit })),
@@ -1590,7 +1599,7 @@ function viewDoc(){
       </div>
       <div class="dtape"></div>
       <div class="meta">
-        <div><b>วันที่</b>${fmtD(s.date)}</div>
+        <div><b>วันที่</b>${fmtD(s.date)}${s.ts ? ' · ' + fmtTimeTH(s.ts) : ''}</div>
         <div><b>แผนก</b>${esc(s.dept) || '—'}</div>
         <div><b>ผู้เบิก</b>${esc(s.person)}</div>
         <div><b>ผู้จ่าย</b>${esc(s.approver) || '—'}</div>
@@ -1660,7 +1669,7 @@ document.addEventListener('click', async (e) => {
       const lines = cartArr();
       const res = await submitReq();
       state.slip = {
-        id: res.id, date: todayISO(), person: state.person.trim(),
+        id: res.id, date: todayISO(), ts: new Date().toISOString(), person: state.person.trim(),
         approver: APPROVER_DEFAULT, note: state.note.trim(), dept: state.dept,
         lines: lines.map(l => ({ name:l.name, qty:l.qty, unit:l.unit }))
       };
@@ -1743,7 +1752,7 @@ document.addEventListener('click', async (e) => {
     const r = state.history.find(x => x.id === el.dataset.id);
     if(!r) return;
     state.slip = {
-      id: r.id, date: recDay(r), person: r.person, dept: r.department || '',
+      id: r.id, date: recDay(r), ts: r.created_at || null, person: r.person, dept: r.department || '',
       approver: r.approver || APPROVER_DEFAULT, note: r.note || '',
       lines: (r.lines||[]).map(l => ({ name:l.name, qty:l.qty, unit:l.unit }))
     };
@@ -2234,6 +2243,11 @@ test('fmtDT รับค่าว่าง', () => assertEq(fmtDT(''), '—'));
 test('fmtDT รับ null', () => assertEq(fmtDT(null), '—'));
 test('fmtDT แสดงวัน+เวลาไทย (+7 ชม.)', () => assertEq(fmtDT('2026-07-19T02:30:00Z'), '19 ก.ค. 2026 09:30 น.'));
 test('fmtDT ข้ามวันเมื่อ +7 ชม.', () => assertEq(fmtDT('2026-07-19T20:00:00Z'), '20 ก.ค. 2026 03:00 น.'));
+
+test('fmtTimeTH รับค่าว่าง', () => assertEq(fmtTimeTH(''), ''));
+test('fmtTimeTH รับ null', () => assertEq(fmtTimeTH(null), ''));
+test('fmtTimeTH แสดงเวลาไทย (+7 ชม.)', () => assertEq(fmtTimeTH('2026-07-19T02:30:00Z'), '09:30 น.'));
+test('fmtTimeTH ข้ามวันเมื่อ +7 ชม.', () => assertEq(fmtTimeTH('2026-07-19T20:00:00Z'), '03:00 น.'));
 
 // storeSlip: แปลงใบเบิกฝั่งสโตร์ -> slip สำหรับพิมพ์ใบเซ็นรับ
 test('storeSlip ใบจ่ายแล้ว ผู้จ่าย=ชื่อคนจ่ายจริง', () => {
