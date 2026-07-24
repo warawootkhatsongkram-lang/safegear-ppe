@@ -403,6 +403,9 @@ const TH_M = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','ม�
 const TODAY = new Date();
 const APPROVER_DEFAULT = 'จป.วิชาชีพ';
 
+// รายชื่อแผนก (รหัสแผนกของบริษัท — ใช้ตอนคีย์ใบเบิกว่าแผนกไหนเบิก)
+const DEPTS = ['OFFICE','NEW OFFICE','LS','BD','GD','TB','WD','PC','PK','WH','LG','MT','R&D','QC','EDP','STORE','AC','CI','HR','SF','IT','GP','EXECUTIVE','OTHER'];
+
 // TABS: [ชื่อ, คำอธิบาย, ไอคอน, ระดับรหัสที่ต้องใช้]
 //   'open'  = ไม่ต้องใส่รหัสเลย (เดย์สั่ง 19 ก.ค. 2569 — แดชบอร์ดต้องดูได้ทันที)
 //   'issue' = รหัสเบิก หรือ รหัสแม่ ก็เข้าได้
@@ -429,7 +432,7 @@ const state = {
   ready:false, loading:true, busy:false, err:null,
   tab:'dash',                // เปิดมาเจอแดชบอร์ดก่อน เพราะดูได้เลยไม่ต้องใส่รหัส
   items:[], cart:{},         // cart = { itemId: qty }
-  reqStep:1, person:'', note:'',
+  reqStep:1, person:'', note:'', dept:'',    // dept = แผนกที่เบิก (บังคับเลือก)
   slip:null,                 // ใบเบิกที่เพิ่งคีย์เสร็จ -> เอกสาร
   pinMsg:null,               // ข้อความแจ้งผลตอนกรอกรหัส
   pinLevel:null,             // null = ยังไม่ใส่รหัส · 'issue' = รหัสเบิก · 'admin' = รหัสแม่
@@ -665,13 +668,20 @@ function dashTodayRows(dash){
     id:x.item_id, name:x.name, qty:Number(x.qty)||0
   }));
 }
+// ยอดเบิกสะสม (จำนวนชิ้น) ต่อแผนก — นับเฉพาะใบที่จ่ายแล้ว (DB กรอง issued มาให้) เรียงมากไปน้อย
+function dashByDept(dash){
+  return ((dash && dash.by_dept) || [])
+    .map(x => ({ dept:x.dept, qty:Number(x.qty)||0 }))
+    .sort((a,b) => b.qty - a.qty);
+}
 
-// ค้นหาในหน้าประวัติ: เลขที่ใบ / ชื่อผู้เบิก / ชื่อรายการ
+// ค้นหาในหน้าประวัติ: เลขที่ใบ / แผนก / ชื่อผู้เบิก / ชื่อรายการ
 function filterHistory(history, q){
   const s = String(q||'').trim().toLowerCase();
   if(!s) return history||[];
   return (history||[]).filter(r =>
     String(r.id||'').toLowerCase().includes(s) ||
+    String(r.department||'').toLowerCase().includes(s) ||
     String(r.person||'').toLowerCase().includes(s) ||
     (r.lines||[]).some(l => String(l.name||'').toLowerCase().includes(s))
   );
@@ -702,7 +712,8 @@ async function submitReq(){
     p_person: state.person.trim(),
     p_lines: lines,
     p_note: state.note.trim() || null,
-    p_client_token: token
+    p_client_token: token,
+    p_dept: state.dept || null            // แผนกที่เบิก (DB บังคับไม่ให้ว่าง)
   });
   if(error) throw error;
   return data;
@@ -888,6 +899,33 @@ function mountCharts(){
     }));
   }
 
+  const cd = document.getElementById('chDept');
+  if(cd){
+    const drows = dashByDept(state.dash);
+    charts.push(new Chart(cd, {
+      type:'bar',
+      data:{
+        labels: drows.map(r => r.dept),
+        datasets:[{
+          label:'จำนวนชิ้น',
+          data: drows.map(r => r.qty),
+          backgroundColor:'#ffd21e', borderColor:'#0a0a0b', borderWidth:1,
+          borderRadius:5, maxBarThickness:30
+        }]
+      },
+      options:{
+        indexAxis:'y',              // แนวนอน = รหัสแผนกหลายตัวอ่านออก
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false},
+          tooltip:{ callbacks:{ label: c => ' ' + c.parsed.x + ' ชิ้น' } } },
+        scales:{
+          x:{ beginAtZero:true, ticks:{precision:0}, grid:{color:'#2a2c33'} },
+          y:{ grid:{display:false}, ticks:{font:{size:12}} }
+        }
+      }
+    }));
+  }
+
   const c2 = document.getElementById('ch2');
   if(c2){
     const dToday = String((state.dash && state.dash.today_date) || todayISO()).slice(0,10);
@@ -1037,6 +1075,15 @@ function viewDash(){
 
   <div class="panel">
     <div class="eyebrow">กราฟ 2</div>
+    <h3>ยอดเบิกสะสมต่อแผนก</h3>
+    ${dashByDept(state.dash).length
+      ? `<div class="chartbox tall"><canvas id="chDept"></canvas></div>
+         <p style="color:var(--tx3);font-size:12.5px;margin:12px 0 0">รวมจำนวนชิ้นที่จ่ายจริงของแต่ละแผนก · แตะแท่งเพื่อดูจำนวน</p>`
+      : `<div class="empty" style="padding:34px 12px"><div class="ic">📭</div>ยังไม่มีการเบิกที่จ่ายแล้ว</div>`}
+  </div>
+
+  <div class="panel">
+    <div class="eyebrow">กราฟ 3</div>
     <h3>ยอดเบิกรายวัน</h3>
     <div class="filterbar">
       <span style="font-size:13px;color:var(--tx2)">เลือกเดือน</span>
@@ -1158,7 +1205,7 @@ function storeCounts(list){
 // ผู้จ่าย: จ่ายแล้ว = ชื่อคนจ่ายจริง / ยังไม่จ่าย = ว่างไว้ให้เซ็นเอง
 function storeSlip(r){
   return {
-    id: r.id, date: recDay(r), person: r.person,
+    id: r.id, date: recDay(r), person: r.person, dept: r.department || '',
     approver: r.status === 'issued' ? (r.issued_by || '') : '',
     note: r.note || '',
     lines: (r.lines||[]).map(l => ({ name:l.name, qty:l.qty, unit:l.unit })),
@@ -1208,7 +1255,7 @@ function viewStore(){
         <span class="reqid">${esc(r.id)}</span>
         <span class="pill ${bc}">${bl}</span>
       </div>
-      <div class="storemeta">${esc(fmtD(recDay(r)))} · ผู้เบิก ${esc(r.person)}${r.note?` · <span style="color:var(--tx3)">${esc(r.note)}</span>`:''}</div>
+      <div class="storemeta">${esc(fmtD(recDay(r)))}${r.department?` · <b style="color:var(--tx2)">${esc(r.department)}</b>`:''} · ผู้เบิก ${esc(r.person)}${r.note?` · <span style="color:var(--tx3)">${esc(r.note)}</span>`:''}</div>
       <div class="storelines">${lines}</div>
       ${action}
       <div class="storeprint"><button class="btn ghost sm" data-act="storePrint" data-id="${esc(r.id)}">🖨️ พิมพ์ใบเซ็นรับของ</button></div>
@@ -1237,6 +1284,7 @@ function viewHistory(){
     return `<tr>
       <td style="font-weight:700;color:var(--y);white-space:nowrap">${esc(r.id)}</td>
       <td style="white-space:nowrap">${esc(fmtD(recDay(r)))}</td>
+      <td style="white-space:nowrap">${esc(r.department) || '—'}</td>
       <td>${esc(r.person)}
         <div style="font-size:11.5px;color:var(--tx3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px">${esc(names)}</div></td>
       <td class="num">${tot}</td>
@@ -1247,14 +1295,14 @@ function viewHistory(){
 
   return `<div class="panel">
     <div class="filterbar">
-      <input class="inp srch" id="hSearch" placeholder="ค้นหา เลขที่ใบ / ชื่อผู้เบิก / ชื่อรายการ" value="${esc(state.hq)}">
+      <input class="inp srch" id="hSearch" placeholder="ค้นหา เลขที่ใบ / แผนก / ชื่อผู้เบิก / ชื่อรายการ" value="${esc(state.hq)}">
       <button class="btn sm" data-act="hsearch">ค้นหา</button>
       ${state.hq ? `<button class="btn ghost sm" data-act="hclear">ล้าง</button>` : ''}
     </div>
     <div style="font-size:13px;color:var(--tx3);margin-bottom:10px">
       พบ ${list.length} ใบ${state.hq?` จากทั้งหมด ${state.history.length} ใบ`:''}</div>
     ${list.length ? `<div class="tbwrap"><table class="tb">
-      <thead><tr><th>เลขที่</th><th>วันที่</th><th>ผู้เบิก</th><th style="text-align:right">รวม</th><th></th><th></th></tr></thead>
+      <thead><tr><th>เลขที่</th><th>วันที่</th><th>แผนก</th><th>ผู้เบิก</th><th style="text-align:right">รวม</th><th></th><th></th></tr></thead>
       <tbody>${rows}</tbody></table></div>`
       : `<div class="empty"><div class="ic">🕘</div>ไม่พบใบเบิกที่ตรงกับคำค้น</div>`}
   </div>
@@ -1467,6 +1515,11 @@ function stepPerson(){
   return `<div class="card" style="max-width:560px">
     <div class="eyebrow">ข้อมูลผู้เบิก</div>
     <h3 style="margin:8px 0 18px;font-size:19px">ใครเป็นคนมารับของ</h3>
+    <label class="fld"><span>แผนกที่เบิก *</span>
+      <select class="inp" id="fDept">
+        <option value="" ${state.dept?'':'selected'} disabled>— เลือกแผนก —</option>
+        ${DEPTS.map(d => `<option value="${esc(d)}" ${state.dept===d?'selected':''}>${esc(d)}</option>`).join('')}
+      </select></label>
     <label class="fld"><span>ชื่อผู้เบิก *</span>
       <input class="inp" id="fPerson" value="${esc(state.person)}" placeholder="เช่น สมชาย ใจดี (ฝ่ายผลิต)"></label>
     <label class="fld"><span>หมายเหตุ (ถ้ามี)</span>
@@ -1489,6 +1542,7 @@ function stepConfirm(){
     <div class="eyebrow">ตรวจก่อนยืนยัน</div>
     <h3 style="margin:8px 0 16px;font-size:19px">สรุปใบเบิก</h3>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;margin-bottom:18px">
+      <div><div class="unit-lbl">แผนก</div><div style="font-weight:600;margin-top:3px">${esc(state.dept)||'—'}</div></div>
       <div><div class="unit-lbl">ผู้เบิก</div><div style="font-weight:600;margin-top:3px">${esc(state.person)||'—'}</div></div>
       <div><div class="unit-lbl">ผู้จ่าย</div><div style="font-weight:600;margin-top:3px">${esc(APPROVER_DEFAULT)}</div></div>
       <div><div class="unit-lbl">วันที่</div><div style="font-weight:600;margin-top:3px">${fmtD(todayISO())}</div></div>
@@ -1537,6 +1591,7 @@ function viewDoc(){
       <div class="dtape"></div>
       <div class="meta">
         <div><b>วันที่</b>${fmtD(s.date)}</div>
+        <div><b>แผนก</b>${esc(s.dept) || '—'}</div>
         <div><b>ผู้เบิก</b>${esc(s.person)}</div>
         <div><b>ผู้จ่าย</b>${esc(s.approver) || '—'}</div>
         <div><b>จำนวนรายการ</b>${s.lines.length} รายการ · รวม ${total} ชิ้น</div>
@@ -1584,8 +1639,10 @@ document.addEventListener('click', async (e) => {
     const n = Number(el.dataset.n);
     if(n === 2 && state.reqStep === 1 && !cartQty()) return;
     if(n === 3){
+      const dp = $('#fDept');   if(dp) state.dept = dp.value;
       const p = $('#fPerson'); if(p) state.person = p.value;
       const nt = $('#fNote');  if(nt) state.note = nt.value;
+      if(!state.dept){ state.err = 'กรุณาเลือกแผนก'; render(); return; }
       if(!state.person.trim()){ state.err = 'กรุณาระบุชื่อผู้เบิก'; render(); return; }
     }
     if(n === 2 && state.reqStep === 3){
@@ -1597,17 +1654,18 @@ document.addEventListener('click', async (e) => {
   else if(act === 'submit'){
     const err = validateReq(state.person, state.cart, state.items);
     if(err){ state.err = err; render(); return; }
+    if(!state.dept){ state.err = 'กรุณาเลือกแผนก'; render(); return; }
     state.busy = true; state.err = null; render();
     try{
       const lines = cartArr();
       const res = await submitReq();
       state.slip = {
         id: res.id, date: todayISO(), person: state.person.trim(),
-        approver: APPROVER_DEFAULT, note: state.note.trim(),
+        approver: APPROVER_DEFAULT, note: state.note.trim(), dept: state.dept,
         lines: lines.map(l => ({ name:l.name, qty:l.qty, unit:l.unit }))
       };
       dlog('OK', `บันทึกใบเบิก ${res.id} สำเร็จ${res.duplicate?' (ใบเดิม)':''}`);
-      state.cart = {}; state.person = ''; state.note = ''; state.reqStep = 1;
+      state.cart = {}; state.person = ''; state.note = ''; state.dept = ''; state.reqStep = 1;
       await loadItems();                       // สต็อกยังไม่ลด (ตัดตอนสโตร์จ่าย) แต่ refresh เผื่อมีคนจ่ายคู่ขนาน
       await loadStore();                        // ใบใหม่ต้องขึ้นแท็บสโตร์เป็น "รอจ่าย" ทันที
       await loadDashboard();                   // นับเฉพาะที่จ่ายแล้ว = ใบใหม่ยังไม่ขึ้นกราฟ (ตรงกับสต็อก)
@@ -1654,7 +1712,7 @@ document.addEventListener('click', async (e) => {
     userPin = null; state.pinLevel = null; state.pinMsg = null;
     // ออกจากระบบแล้วเด้งไปแดชบอร์ด (หน้าเดียวที่ยังดูได้โดยไม่มีรหัส) ไม่ใช่ไปเจอด่านรหัสทันที
     state.tab = 'dash'; state.slip = null; state.items = []; state.cart = {};
-    state.person = ''; state.note = ''; state.reqStep = 1;
+    state.person = ''; state.note = ''; state.dept = ''; state.reqStep = 1;
     // ล้างข้อมูลฝั่ง admin ออกจากหน่วยความจำด้วย ไม่ให้ค้างให้คนถัดไปเห็น
     state.history = []; state.moves = []; state.p2loaded = false;
     state.adjust = null; state.edit = null; state.hq = ''; state.month = null;
@@ -1685,7 +1743,7 @@ document.addEventListener('click', async (e) => {
     const r = state.history.find(x => x.id === el.dataset.id);
     if(!r) return;
     state.slip = {
-      id: r.id, date: recDay(r), person: r.person,
+      id: r.id, date: recDay(r), person: r.person, dept: r.department || '',
       approver: r.approver || APPROVER_DEFAULT, note: r.note || '',
       lines: (r.lines||[]).map(l => ({ name:l.name, qty:l.qty, unit:l.unit }))
     };
@@ -2025,7 +2083,8 @@ const DASH = {
     {id:'boots',  name:'รองเท้าเซฟตี้', cat:'เท้า', color:'#26292e', unit:'คู่', stock:6,  min_stock:10}
   ],
   today:[{item_id:'helmet', name:'หมวกนิรภัย', qty:5}, {item_id:'boots', name:'รองเท้าเซฟตี้', qty:2}],
-  daily:[{d:'2026-06-10', qty:13}, {d:'2026-07-19', qty:7}, {d:'2026-07-19', qty:3}]
+  daily:[{d:'2026-06-10', qty:13}, {d:'2026-07-19', qty:7}, {d:'2026-07-19', qty:3}],
+  by_dept:[{dept:'WD', qty:4}, {dept:'PC', qty:9}, {dept:'ไม่ระบุ', qty:1}]
 };
 
 test('canAccess แดชบอร์ดเข้าได้แม้ไม่มีรหัส', () => assertEq(canAccess('open', null), true));
@@ -2039,6 +2098,11 @@ test('dashItems รับค่าว่าง', () => assertEq(dashItems(null),
 test('lowItems ทำงานกับข้อมูลแดชบอร์ด', () => assertEq(lowItems(dashItems(DASH)).length, 1));
 test('dashTodayRows แปลง item_id เป็น id', () => assertEq(dashTodayRows(DASH)[0].id, 'helmet'));
 test('dashTodayRows รับค่าว่าง', () => assertEq(dashTodayRows(null), []));
+
+test('dashByDept เรียงจากมากไปน้อย', () => assertEq(dashByDept(DASH).map(r=>r.dept), ['PC','WD','ไม่ระบุ']));
+test('dashByDept รวมจำนวนชิ้นถูก', () => assertEq(dashByDept(DASH)[0].qty, 9));
+test('dashByDept รับค่าว่าง', () => assertEq(dashByDept(null), []));
+test('dashByDept ไม่มี by_dept ในข้อมูล', () => assertEq(dashByDept({today:[]}), []));
 
 test('seriesFromDaily เติมวันครบทั้งเดือน', () => assertEq(seriesFromDaily(DASH.daily,'2026-07').length, 31));
 test('seriesFromDaily รวมยอดวันซ้ำเข้าด้วยกัน', () => assertEq(seriesFromDaily(DASH.daily,'2026-07')[18].qty, 10));
