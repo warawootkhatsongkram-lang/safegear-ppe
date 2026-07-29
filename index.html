@@ -507,6 +507,8 @@ const state = {
   moves:[],                  // audit trail สต็อก (admin_get_movements)
   month:null,                // เดือนที่กรองในกราฟ 2 เช่น '2026-07'
   hq:'',                     // คำค้นในหน้าประวัติ
+  histClear:null,            // 'ask' = กำลังถามยืนยันล้างประวัติ (รหัสแม่)
+  histMsg:null,              // { ok:bool, text } = แถบแจ้งผลล้างประวัติ
   adjust:null,               // { itemId, delta, reason, note, err } = modal ปรับยอด
   edit:null,                 // { form, isNew, err, confirmHide } = modal จัดการรายการ PPE (เฟส 4)
   p2loaded:false,            // โหลดข้อมูลฝั่ง admin แล้วหรือยัง
@@ -808,6 +810,15 @@ async function undoDispenseReq(reqId){
   const { data, error } = await sb.rpc('store_undo_dispense', {
     p_pin: userPin, p_req_id: reqId
   });
+  if(error) throw error;
+  return data;
+}
+
+// ล้างประวัติการเบิกทั้งหมด (รหัสแม่เท่านั้น — DB ตรวจซ้ำ · รหัสผิด = raise exception)
+// ส่งรหัสที่เดย์พิมพ์ยืนยันตอนกดลบ ไม่ใช่ userPin ที่ถืออยู่ (ยืนยันตัวตนซ้ำก่อน action ถอยไม่ได้)
+async function clearHistory(pin){
+  dlog('HIST', 'ล้างประวัติการเบิกทั้งหมด');
+  const { data, error } = await sb.rpc('admin_clear_history', { p_pin: pin });
   if(error) throw error;
   return data;
 }
@@ -1350,6 +1361,26 @@ function viewStore(){
 }
 
 /* ---------- ประวัติการเบิก ---------- */
+// แปลงประวัติใบเบิกเป็น CSV (มี BOM ให้ Excel อ่านภาษาไทยถูก) — ใช้สำรองก่อนล้างประวัติ
+function historyToCSV(list){
+  const q = v => '"' + String(v==null?'':v).replace(/"/g,'""') + '"';   // ครอบด้วย " เสมอ + escape " เป็น ""
+  const head = ['เลขที่','วันที่','แผนก','ผู้เบิก','ผู้อนุมัติ','หมายเหตุ','รวมชิ้น','รายการ'];
+  const rows = (list||[]).map(r => {
+    const items = (r.lines||[]).map(l => `${l.name} x${l.qty} ${l.unit}`).join(' / ');
+    return [r.id, recDay(r), r.department||'', r.person||'', r.approver||'', r.note||'', reqTotal(r), items]
+      .map(q).join(',');
+  });
+  return '﻿' + [head.map(q).join(','), ...rows].join('\r\n');
+}
+// สั่งดาวน์โหลดไฟล์ text เป็นไฟล์ (สร้าง <a download> ชั่วคราวแล้วคลิก)
+function downloadCSV(filename, text){
+  const blob = new Blob([text], {type:'text/csv;charset=utf-8'});
+  const url  = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 function viewHistory(){
   const list = filterHistory(state.history, state.hq);
   const rows = list.map(r => {
@@ -1380,7 +1411,36 @@ function viewHistory(){
       <tbody>${rows}</tbody></table></div>`
       : `<div class="empty"><div class="ic">🕘</div>ไม่พบใบเบิกที่ตรงกับคำค้น</div>`}
   </div>
+  ${clearHistoryUI()}
   <button class="btn ghost sm" data-act="reload">↻ ดึงข้อมูลใหม่</button>`;
+}
+
+// แผงล้างประวัติการเบิก — โผล่เฉพาะถือรหัสแม่ (หน้านี้เข้าได้เฉพาะรหัสแม่อยู่แล้ว กันไว้อีกชั้น)
+// ล้างแล้ว state.history ว่าง -> แสดงแค่แถบแจ้งผลสำเร็จ (ไม่มีปุ่มให้กดซ้ำ)
+function clearHistoryUI(){
+  const msg = state.histMsg
+    ? `<div class="pill ${state.histMsg.ok?'badge-ok':'badge-dang'}" style="margin:0 0 12px;white-space:normal;display:flex">${esc(state.histMsg.text)}</div>`
+    : '';
+  if(state.pinLevel !== 'admin') return '';
+  const hasHist = (state.history||[]).length > 0;
+  if(!hasHist) return msg ? `<div class="panel" style="margin-bottom:14px">${msg}</div>` : '';
+
+  const body = state.histClear === 'ask'
+    ? `<div style="border:1px solid var(--red);border-radius:12px;padding:14px">
+         <div style="color:var(--red);font-weight:700;margin-bottom:6px">⚠️ ล้างประวัติการเบิกทั้งหมด ${state.history.length} ใบ (รวมใบที่ยังรอสโตร์จ่าย) — ลบถาวร กู้คืนไม่ได้</div>
+         <div style="color:var(--tx3);font-size:13px;margin-bottom:10px">ระบบจะดาวน์โหลดไฟล์สำรอง CSV ให้ก่อนลบ · ใส่รหัสผู้ดูแลเพื่อยืนยัน</div>
+         <input class="inp" id="clearPin" type="password" placeholder="รหัสผู้ดูแล" autocomplete="off" style="margin-bottom:10px">
+         <div style="display:flex;gap:10px">
+           <button class="btn ghost" data-act="histClearNo" ${state.busy?'disabled':''}>ยกเลิก</button>
+           <button class="btn danger" style="flex:1" data-act="histClearYes" ${state.busy?'disabled':''}>${state.busy?'กำลังล้าง…':'🗑️ ยืนยันล้างประวัติ'}</button>
+         </div>
+       </div>`
+    : `<button class="btn danger sm" data-act="histClearAsk">🗑️ ล้างประวัติการเบิก</button>`;
+
+  return `<div class="panel" style="margin-bottom:14px">
+    <div class="eyebrow">จัดการประวัติ (รหัสผู้ดูแล)</div>
+    ${msg}${body}
+  </div>`;
 }
 
 /* ---------- modal ปรับยอด / รับของเข้า ---------- */
@@ -1812,6 +1872,38 @@ document.addEventListener('click', async (e) => {
   }
   else if(act === 'hclear'){ state.hq = ''; render(); }
 
+  // ---- ล้างประวัติการเบิก (รหัสแม่เท่านั้น · ดาวน์โหลด CSV สำรองก่อนลบ · ถอยไม่ได้) ----
+  else if(act === 'histClearAsk'){ state.histClear = 'ask'; state.histMsg = null; render(); }
+  else if(act === 'histClearNo'){  state.histClear = null; render(); }
+  else if(act === 'histClearYes'){
+    if(state.pinLevel !== 'admin'){ state.histMsg = {ok:false, text:'ล้างประวัติได้เฉพาะรหัสผู้ดูแล'}; render(); return; }
+    const pin = (($('#clearPin')||{}).value || '').trim();
+    if(!pin){ state.histMsg = {ok:false, text:'กรุณาใส่รหัสผู้ดูแลเพื่อยืนยันการล้างประวัติ'}; render(); return; }
+    // สำรอง CSV ก่อนลบเสมอ (ลบแล้วกู้ไม่ได้) — ทำก่อนยิง RPC
+    const n = (state.history||[]).length;
+    if(n){
+      try{ downloadCSV(`ประวัติการเบิก-สำรอง-${todayISO(new Date())}.csv`, historyToCSV(state.history)); }
+      catch(ex){ dlog('ERROR', 'สำรอง CSV ไม่สำเร็จ: ' + (ex.message||ex), true); }
+    }
+    state.busy = true; state.histMsg = null; render();
+    try{
+      const res = await clearHistory(pin);
+      const del = (res && res.deleted) || 0;
+      state.histMsg = {ok:true, text:`✅ ล้างประวัติแล้ว ${del} ใบ · ดาวน์โหลดไฟล์สำรอง CSV ให้แล้ว`};
+      dlog('OK', `ล้างประวัติ ${del} ใบ`);
+      state.busy = false; state.histClear = null; state.loading = true; render();
+      await loadDashboard();     // KPI/กราฟ นับจาก requisitions ที่เพิ่งลบ
+      await loadStore();          // แท็บสโตร์อ่าน requisitions ตัวเดียวกัน
+      await loadAdminData();      // ประวัติ + movement (movement ไม่ถูกลบ)
+      state.loading = false;
+    }catch(ex){
+      state.busy = false; state.loading = false; state.histClear = null;
+      state.histMsg = {ok:false, text: ex.message || String(ex)};
+      dlog('ERROR', 'ล้างประวัติไม่สำเร็จ: ' + (ex.message||ex), true);
+    }
+    render();
+  }
+
   // เปิดเอกสารใบเก่ามาพิมพ์ซ้ำ — ใช้ viewDoc ตัวเดียวกับใบที่เพิ่งคีย์
   else if(act === 'openSlip'){
     const r = state.history.find(x => x.id === el.dataset.id);
@@ -2129,6 +2221,18 @@ test('recDay ถอยไปใช้ req_date เมื่อไม่มี cr
   () => assertEq(recDay({req_date:'2026-05-04'}), '2026-05-04'));
 test('reqTotal รวมจำนวนในใบ', () => assertEq(reqTotal(HIST[0]), 7));
 test('reqTotal ใบไม่มีรายการ', () => assertEq(reqTotal({lines:[]}), 0));
+
+test('historyToCSV มี BOM นำหน้า', () => assertEq(historyToCSV([]).charCodeAt(0), 0xFEFF));
+test('historyToCSV ลิสต์ว่างได้เฉพาะหัวตาราง',
+  () => assertEq(historyToCSV([]).slice(1).split('\r\n').length, 1));
+test('historyToCSV 3 ใบได้ 4 บรรทัด (หัว+3)',
+  () => assertEq(historyToCSV(HIST).split('\r\n').length, 4));
+test('historyToCSV รวมรายการในใบถูก',
+  () => assertEq(historyToCSV(HIST).split('\r\n')[1].indexOf('หมวกนิรภัย x2 ใบ / หน้ากาก N95 x5 ชิ้น') > -1, true));
+test('historyToCSV escape เครื่องหมายคำพูด/คอมมา', () => {
+  const csv = historyToCSV([{id:'REQ-X', person:'A "B", C', created_at:'2026-07-19T02:00:00Z', lines:[]}]);
+  assertEq(csv.split('\r\n')[1].indexOf('"A ""B"", C"') > -1, true);
+});
 
 test('daysInMonth ก.พ. ปีปกติ', () => assertEq(daysInMonth('2026-02'), 28));
 test('daysInMonth ก.พ. ปีอธิกสุรทิน', () => assertEq(daysInMonth('2024-02'), 29));
