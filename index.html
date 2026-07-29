@@ -326,9 +326,74 @@ table.tb td.num{text-align:right;font-weight:700;color:var(--y);font-variant-num
 }
 @media(max-width:400px){ .grid-items{grid-template-columns:1fr} }
 
+/* ================================================================
+   POLISH LAYER — เสริมมิติ+ลูกเล่น (เนียนๆ) คงธีม Industrial Safety เดิม
+   ทั้งหมดใช้ token สีเดิม · ไม่แตะ logic · เอกสารพิมพ์ #doc กันไว้ (รีเซ็ตใน @media print)
+   ถ้าเดย์อยากถอดออก ลบทั้งบล็อกนี้ได้เลย กลับเป็นแบนราบเหมือนเดิม
+   ================================================================ */
+/* มิติ: เงานุ่ม + เส้น highlight ขอบบน (ขอบคมชัดขึ้นบนพื้นเข้ม) */
+.card,.kpi,.panel,.storecard,.step,.datepill{
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 2px 5px rgba(0,0,0,.28), 0 10px 24px -10px rgba(0,0,0,.5);
+}
+/* ปุ่มเหลืองหลัก: sheen ขาวจางบนพื้น + เงานุ่มโทนเหลือง + ยกขึ้นตอน hover */
+.btn{transition:transform .12s ease, box-shadow .18s ease, background .15s, filter .15s}
+.btn:not(.ghost):not(.danger){
+  background-image:linear-gradient(180deg, rgba(255,255,255,.17), rgba(255,255,255,0) 46%);
+  box-shadow:0 1px 2px rgba(0,0,0,.35), 0 6px 16px -6px rgba(255,210,30,.35);
+}
+.btn.ghost{box-shadow:0 1px 2px rgba(0,0,0,.28)}
+.btn.danger{box-shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 16px -7px rgba(224,36,36,.4)}
+.btn:disabled{background-image:none;box-shadow:none}
+.btn:active{transform:scale(.97)}
+/* เมนู sidebar: แถบเหลืองเรืองที่หน้า active + ขอบในจาง */
+.navbtn{position:relative}
+.navbtn.on{box-shadow:inset 0 0 0 1px rgba(255,210,30,.14)}
+.navbtn.on::before{
+  content:'';position:absolute;left:-12px;top:50%;transform:translateY(-50%);
+  width:3px;height:58%;border-radius:0 4px 4px 0;background:var(--y);
+  box-shadow:0 0 10px 1px rgba(255,210,30,.6)
+}
+/* เมนูล่างมือถือ: จุดเรืองบนหัวปุ่มที่ active */
+.mnavbtn{position:relative}
+.mnavbtn.on::before{
+  content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);
+  width:24px;height:3px;border-radius:0 0 3px 3px;background:var(--y);
+  box-shadow:0 0 8px 1px rgba(255,210,30,.55)
+}
+/* การ์ดที่กดได้: ขอบคม + ยกลอยตอน hover (เฉพาะอุปกรณ์ที่ hover ได้ ไม่ค้างบนมือถือ) */
+.item{
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 2px 5px rgba(0,0,0,.25);
+  transition:border-color .15s, background .15s, transform .14s ease, box-shadow .16s ease
+}
+.item:active{transform:translateY(0)}
+.storecard{transition:transform .14s ease, box-shadow .16s ease}
+@media(hover:hover){
+  .item:hover{transform:translateY(-2px);border-color:var(--line2);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 8px 20px -6px rgba(0,0,0,.55)}
+  .storecard:hover{transform:translateY(-1px)}
+  .navbtn:not(.on):hover{background:var(--card2);color:var(--tx)}
+  .qbtn:hover{border-color:var(--y-dim)}
+  table.tb tbody tr:hover td{background:rgba(255,255,255,.022)}
+}
+/* ช่องกรอก: focus มี ring เหลืองจางเสริมขอบ (คมชัด+เข้าถึงง่าย) */
+.inp,.sel{transition:border-color .15s, box-shadow .15s}
+.inp:focus,.sel:focus{box-shadow:0 0 0 3px rgba(255,210,30,.13)}
+/* แถบตะกร้าล่าง: เงาบนแยกชั้นจากเนื้อหา */
+.cartbar{box-shadow:0 -8px 24px -6px rgba(0,0,0,.5)}
+/* modal: เด้งเข้านุ่มๆ ตอนเปิด (ไม่ re-render จึงไม่วูบ) + เงายกสูง */
+.modal{box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 24px 64px -14px rgba(0,0,0,.72)}
+@keyframes modalIn{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}
+#overlay.show .modal{animation:modalIn .18s ease-out}
+/* เคารพผู้ตั้งค่าลดการเคลื่อนไหว */
+@media(prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms!important;transition-duration:.001ms!important}
+  .item:hover,.storecard:hover{transform:none!important}
+}
+
 /* ---------- พิมพ์ A4 ---------- */
 @media print{
   @page{size:A4;margin:14mm}
+  *{box-shadow:none!important;animation:none!important}
   body{background:#fff!important;color:#000;background-image:none}
   body::before,body::after{display:none}
   #side,#mnav,#dbg,.noprint,.topbar,.cartbar{display:none!important}
