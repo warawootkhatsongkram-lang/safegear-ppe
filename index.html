@@ -1082,6 +1082,14 @@ function mountCharts(){
   if(state.tab !== 'dash' || state.slip || !state.dash) return;
   if(typeof Chart === 'undefined') return;   // CDN โหลดไม่ติด -> หน้าอื่นยังใช้ได้ตามปกติ
 
+  // A12.1: ฟอนต์ Kanit มาจาก CDN — บนมือถือเน็ตช้าอาจมาหลังกราฟวาดเสร็จ ทำให้ความกว้างข้อความที่วัดไว้ผิด
+  // วาดใหม่รอบเดียวเมื่อฟอนต์พร้อม (ตอนนั้น status = 'loaded' แล้ว จึงไม่วนซ้ำ)
+  if(document.fonts && document.fonts.status !== 'loaded'){
+    document.fonts.ready.then(() => {
+      if(state.tab === 'dash' && !state.slip && state.dash) mountCharts();
+    });
+  }
+
   Chart.defaults.color = '#9a9da5';
   Chart.defaults.font.family = "'Kanit',system-ui,sans-serif";
 
@@ -1111,12 +1119,18 @@ function mountCharts(){
           x:{ beginAtZero:true, ticks:{precision:0}, grid:{color:'#2a2c33'} },
           // A12: ชื่อรายการไทยยาวกว่าพื้นที่แกนบนจอแคบ -> ตัดเป็นบรรทัดเอง ไม่ปล่อยให้ Chart.js ตัดทิ้ง
           y:{ grid:{display:false},
+              // A12.1: บังคับความกว้างแกนชื่อเอง — Safari/iOS จัดสรรให้แค่ ~40px จนชื่อโดนตัดเหลือ 3 ตัวอักษร
+              // (Chrome เดสก์ท็อปให้ 148px จึงไม่เห็นปัญหา) ไม่พึ่งการวัดของ Chart.js อีกต่อไป
+              afterFit(scale){
+                const w = scale.chart.width;
+                scale.width = Math.max(86, Math.min(150, Math.round(w * 0.34)));
+              },
               ticks:{ font:{size: c1.parentElement.clientWidth < 420 ? 11 : 12}, autoSkip:false,
                 callback(v){
                   const nm = this.getLabelForValue(v);
                   const w = this.chart.width;
                   if(w >= 620) return nm;                       // กว้างพอ = ชื่อเต็มบรรทัดเดียว
-                  return wrapLabel(nm, w >= 420 ? 16 : 12, 2);  // แคบ = 2 บรรทัด
+                  return wrapLabel(nm, w >= 420 ? 16 : 11, 2);  // แคบ = 2 บรรทัด
                 } } }
         }
       }
