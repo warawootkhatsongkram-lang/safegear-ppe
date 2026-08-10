@@ -1109,7 +1109,15 @@ function mountCharts(){
           tooltip:{ callbacks:{ label: c => ' ' + c.parsed.x + ' ชิ้น' } } },
         scales:{
           x:{ beginAtZero:true, ticks:{precision:0}, grid:{color:'#2a2c33'} },
-          y:{ grid:{display:false}, ticks:{font:{size:12}} }
+          // A12: ชื่อรายการไทยยาวกว่าพื้นที่แกนบนจอแคบ -> ตัดเป็นบรรทัดเอง ไม่ปล่อยให้ Chart.js ตัดทิ้ง
+          y:{ grid:{display:false},
+              ticks:{ font:{size:12}, autoSkip:false,
+                callback(v){
+                  const nm = this.getLabelForValue(v);
+                  const w = this.chart.width;
+                  if(w >= 620) return nm;                       // กว้างพอ = ชื่อเต็มบรรทัดเดียว
+                  return wrapLabel(nm, w >= 420 ? 16 : 12, 2);  // แคบ = 2 บรรทัด
+                } } }
         }
       }
     }));
@@ -1298,6 +1306,26 @@ function dashYM(){
 function deptItemColor(catItems, id, i){
   const it = (catItems||[]).find(c => c.id === id);
   return (it && it.color) || DEPT_PAL[i % DEPT_PAL.length];
+}
+/* A12: ตัดชื่อยาวบนแกนกราฟให้เป็นหลายบรรทัด (Chart.js รับ array = ขึ้นบรรทัดใหม่)
+   ปล่อยให้ Chart.js จัดการเอง = พอจอแคบมันจะ "ตัดทิ้ง" เหลือ 2-3 ตัวอักษรจนอ่านไม่ออก
+   ตัดที่ช่องว่างก่อน ไม่มีค่อยตัดดิบ (ชื่อ PPE ไทยส่วนใหญ่ไม่มีเว้นวรรค) · เกินจำนวนบรรทัดจึงใส่ … */
+function wrapLabel(s, per, lines){
+  const t = String(s == null ? '' : s).trim();
+  if(!t) return '';
+  const n = Math.max(4, Number(per) || 14), max = Math.max(1, Number(lines) || 2);
+  if(t.length <= n) return t;
+  const out = [];
+  let rest = t;
+  while(rest && out.length < max){
+    if(rest.length <= n){ out.push(rest); rest = ''; break; }
+    let cut = rest.lastIndexOf(' ', n);
+    if(cut < Math.floor(n * 0.5)) cut = n;        // ช่องว่างอยู่ต้นบรรทัดเกินไป -> ตัดดิบดีกว่า
+    out.push(rest.slice(0, cut).trim());
+    rest = rest.slice(cut).trim();
+  }
+  if(rest) out[out.length-1] = out[out.length-1].slice(0, -1) + '…';
+  return out;
 }
 // สีตัวเลขที่เขียนทับบนแท่ง — พื้นสว่างใช้ตัวหนังสือดำ พื้นเข้มใช้ขาว (เช่น ถุงมือขาว vs รองเท้าดำ)
 function labelInk(bg){
@@ -2567,6 +2595,23 @@ test('deptItemMatrix เดือนที่ไม่มีข้อมูล',
   assertEq([M.depts, M.items, M.total], [[], [], 0]);
 });
 test('deptItemMatrix รับค่าว่าง', () => assertEq(deptItemMatrix(null, MONTH_ALL).depts, []));
+
+/* ---------- A12: ตัดชื่อยาวบนแกนกราฟ ---------- */
+test('wrapLabel ชื่อสั้นกว่าเกณฑ์ คืนบรรทัดเดียว', () => assertEq(wrapLabel('ถุงมือเชื่อม', 14, 2), 'ถุงมือเชื่อม'));
+test('wrapLabel ชื่อยาวตัดเป็น 2 บรรทัด', () => {
+  assertEq(wrapLabel('แว่นตานิรภัยกันสะเก็ด', 12, 2), ['แว่นตานิรภัย','กันสะเก็ด']);
+});
+test('wrapLabel ตัดที่ช่องว่างถ้ามี', () => {
+  assertEq(wrapLabel('ตลับกรอง 2097 (งานเชื่อม)', 14, 2), ['ตลับกรอง 2097','(งานเชื่อม)']);
+});
+test('wrapLabel ยาวเกิน 2 บรรทัด ใส่ … ท้าย', () => {
+  const r = wrapLabel('ถุงมือเลเซอร์ (หนังแกะสีเทายาวพิเศษ)', 10, 2);
+  assertEq([r.length, r[1].slice(-1)], [2, '…']);
+});
+test('wrapLabel รับค่าว่าง/null', () => assertEq([wrapLabel('',14,2), wrapLabel(null,14,2)], ['','']));
+test('wrapLabel พารามิเตอร์ผิดรูปแบบไม่พัง', () => {
+  assertEq(typeof wrapLabel('ถุงมือผ้า (สีขาว)', 0, 0), 'object');
+});
 
 /* ---------- A11: ป้ายตัวเลขบนกราฟ ---------- */
 test('labelInk พื้นสว่างใช้ตัวหนังสือดำ', () => assertEq(labelInk('#ffd21e'), '#0a0a0b'));
