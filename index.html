@@ -1310,6 +1310,7 @@ function deptItemColor(catItems, id, i){
 /* A12: ตัดชื่อยาวบนแกนกราฟให้เป็นหลายบรรทัด (Chart.js รับ array = ขึ้นบรรทัดใหม่)
    ปล่อยให้ Chart.js จัดการเอง = พอจอแคบมันจะ "ตัดทิ้ง" เหลือ 2-3 ตัวอักษรจนอ่านไม่ออก
    ตัดที่ช่องว่างก่อน ไม่มีค่อยตัดดิบ (ชื่อ PPE ไทยส่วนใหญ่ไม่มีเว้นวรรค) · เกินจำนวนบรรทัดจึงใส่ … */
+const THAI_TAIL = /[่้๊๋ัิีึืุู็์ำะาๆๅ]/;   // อักขระที่ห้ามอยู่ต้นบรรทัด (ต้องเกาะพยัญชนะตัวหน้า)
 function wrapLabel(s, per, lines){
   const t = String(s == null ? '' : s).trim();
   if(!t) return '';
@@ -1320,7 +1321,12 @@ function wrapLabel(s, per, lines){
   while(rest && out.length < max){
     if(rest.length <= n){ out.push(rest); rest = ''; break; }
     let cut = rest.lastIndexOf(' ', n);
-    if(cut < Math.floor(n * 0.5)) cut = n;        // ช่องว่างอยู่ต้นบรรทัดเกินไป -> ตัดดิบดีกว่า
+    if(cut < Math.floor(n * 0.5)){                // ช่องว่างอยู่ต้นบรรทัดเกินไป -> ตัดดิบดีกว่า
+      cut = n;
+      // ห้ามขึ้นบรรทัดใหม่ด้วยสระ/วรรณยุกต์ที่ต้องเกาะพยัญชนะ (เช่น "กันส|ะเก็ด") -> ถอยจุดตัด
+      let k = 0;
+      while(k < 4 && cut > 1 && THAI_TAIL.test(rest.charAt(cut))){ cut--; k++; }
+    }
     out.push(rest.slice(0, cut).trim());
     rest = rest.slice(cut).trim();
   }
@@ -2603,6 +2609,12 @@ test('wrapLabel ชื่อยาวตัดเป็น 2 บรรทัด'
 });
 test('wrapLabel ตัดที่ช่องว่างถ้ามี', () => {
   assertEq(wrapLabel('ตลับกรอง 2097 (งานเชื่อม)', 14, 2), ['ตลับกรอง 2097','(งานเชื่อม)']);
+});
+test('wrapLabel ไม่ขึ้นบรรทัดใหม่ด้วยสระ (ถอยจุดตัด)', () => {
+  assertEq(wrapLabel('แว่นตานิรภัยกันสะเก็ด', 16, 2), ['แว่นตานิรภัยกัน','สะเก็ด']);
+});
+test('wrapLabel ไม่ขึ้นบรรทัดใหม่ด้วยวรรณยุกต์', () => {
+  assertEq(wrapLabel('หน้ากากกรองสารเคมี', 11, 2)[1].charAt(0) !== '่', true);
 });
 test('wrapLabel ยาวเกิน 2 บรรทัด ใส่ … ท้าย', () => {
   const r = wrapLabel('ถุงมือเลเซอร์ (หนังแกะสีเทายาวพิเศษ)', 10, 2);
