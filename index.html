@@ -1130,7 +1130,7 @@ function mountCharts(){
                   const nm = this.getLabelForValue(v);
                   const w = this.chart.width;
                   if(w >= 620) return nm;                       // กว้างพอ = ชื่อเต็มบรรทัดเดียว
-                  return wrapLabel(nm, w >= 420 ? 16 : 11, 2);  // แคบ = 2 บรรทัด
+                  return wrapLabel(nm, w >= 420 ? 17 : 14, 2);  // แคบ = 2 บรรทัด (ตัดตามขอบคำ)
                 } } }
         }
       }
@@ -1325,11 +1325,43 @@ function deptItemColor(catItems, id, i){
    ปล่อยให้ Chart.js จัดการเอง = พอจอแคบมันจะ "ตัดทิ้ง" เหลือ 2-3 ตัวอักษรจนอ่านไม่ออก
    ตัดที่ช่องว่างก่อน ไม่มีค่อยตัดดิบ (ชื่อ PPE ไทยส่วนใหญ่ไม่มีเว้นวรรค) · เกินจำนวนบรรทัดจึงใส่ … */
 const THAI_TAIL = /[่้๊๋ัิีึืุู็์ำะาๆๅ]/;   // อักขระที่ห้ามอยู่ต้นบรรทัด (ต้องเกาะพยัญชนะตัวหน้า)
+// ตัดคำไทยด้วยตัวตัดคำของเบราว์เซอร์ (Safari 16.4+/Chrome รองรับ) — คืน null ถ้าไม่มี ให้ไปใช้วิธีนับตัวอักษรแทน
+function thaiWords(t){
+  try{
+    if(typeof Intl !== 'undefined' && Intl.Segmenter){
+      return [...new Intl.Segmenter('th', { granularity:'word' }).segment(t)].map(x => x.segment);
+    }
+  }catch(e){}
+  return null;
+}
 function wrapLabel(s, per, lines){
   const t = String(s == null ? '' : s).trim();
   if(!t) return '';
   const n = Math.max(4, Number(per) || 14), max = Math.max(1, Number(lines) || 2);
   if(t.length <= n) return t;
+
+  // ทางหลัก: ต่อคำเข้าบรรทัดจนเต็มแล้วขึ้นบรรทัดใหม่ที่ขอบคำจริง (ไม่ตัดกลางคำ)
+  const words = thaiWords(t);
+  if(words && words.length > 1){
+    const ln = [];
+    let cur = '';
+    let done = true;
+    for(const w of words){
+      const add = cur + w;
+      if(!cur || add.length <= n){ cur = add; continue; }
+      ln.push(cur.trim());
+      cur = w;
+      if(ln.length >= max){ done = false; break; }
+    }
+    if(ln.length < max && cur.trim()) ln.push(cur.trim());
+    else if(cur.trim()) done = false;
+    // คำเดี่ยวยาวเกินบรรทัด (เช่น ชื่ออังกฤษยาวๆ) -> ทิ้งผลนี้ ไปใช้วิธีนับตัวอักษรด้านล่าง
+    if(!ln.some(l => l.length > n + 2)){
+      if(!done && ln.length) ln[ln.length-1] = ln[ln.length-1].slice(0, -1) + '…';
+      return ln.length === 1 ? ln[0] : ln;
+    }
+  }
+
   const out = [];
   let rest = t;
   while(rest && out.length < max){
@@ -2624,6 +2656,15 @@ test('wrapLabel ชื่อยาวตัดเป็น 2 บรรทัด'
 });
 test('wrapLabel ตัดที่ช่องว่างถ้ามี', () => {
   assertEq(wrapLabel('ตลับกรอง 2097 (งานเชื่อม)', 14, 2), ['ตลับกรอง 2097','(งานเชื่อม)']);
+});
+test('wrapLabel ตัดตามขอบคำจริง ไม่ตัดกลางคำ (Intl.Segmenter)', () => {
+  assertEq(wrapLabel('แว่นตานิรภัยกันสะเก็ด', 14, 2), ['แว่นตานิรภัย','กันสะเก็ด']);
+});
+test('wrapLabel เติมคำจนเต็มบรรทัดแล้วขึ้นบรรทัดใหม่ที่ขอบคำ', () => {
+  assertEq(wrapLabel('ถุงมือกันบาดสีเขียว-เหลือง', 14, 2), ['ถุงมือกันบาดสี','เขียว-เหลือง']);
+});
+test('wrapLabel ชื่อ 12 ตัวอักษรไม่ถูกหั่นเมื่อเกณฑ์ 14', () => {
+  assertEq(wrapLabel('ถุงมือเชื่อม', 14, 2), 'ถุงมือเชื่อม');
 });
 test('wrapLabel ไม่ขึ้นบรรทัดใหม่ด้วยสระ (ถอยจุดตัด)', () => {
   assertEq(wrapLabel('แว่นตานิรภัยกันสะเก็ด', 16, 2), ['แว่นตานิรภัยกัน','สะเก็ด']);
