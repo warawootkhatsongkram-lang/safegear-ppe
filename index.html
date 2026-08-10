@@ -551,8 +551,22 @@ function dbgSummary(){
     + `tab: ${state.tab} · step: ${state.reqStep} · slip: ${state.slip ? esc(state.slip.id) : '—'}<br>`
     + `dash: ${state.dash ? ((state.dash.daily||[]).length + ' วัน · ' + (state.dash.req_count||0) + ' ใบ') : 'ยังไม่โหลด'}<br>`
     + `hist: ${state.history.length} ใบ · moves: ${state.moves.length} · month: ${state.month || '—'} · chart: ${typeof Chart !== 'undefined' ? 'OK' : 'ไม่โหลด'}<br>`
-    + `loading: ${state.loading} · busy: ${state.busy} · err: ${state.err ? esc(state.err) : '—'}`
+    + `loading: ${state.loading} · busy: ${state.busy} · err: ${state.err ? esc(state.err) : '—'}<br>`
+    + dbgChart()
     + `</div>`;
+}
+// A12.3: ค่าจริงของกราฟ 1 ณ เครื่องที่เปิดอยู่ — ใช้ไล่ปัญหาชื่อบนแกนถูกตัด (Safari/iOS ต่างจาก Chrome)
+function dbgChart(){
+  try{
+    const cv = document.getElementById('ch1');
+    if(!cv || typeof Chart === 'undefined') return `ch1: ไม่มีบนหน้านี้`;
+    const ch = Chart.getChart(cv);
+    if(!ch) return `ch1: ยังไม่ได้วาด`;
+    const boxW = cv.parentElement.clientWidth;
+    return `ch1: box ${Math.round(boxW)} · canvas ${Math.round(ch.width)}×${Math.round(ch.height)}`
+      + ` · โซนชื่อ ${nameZone(boxW)} · plotL ${Math.round(ch.chartArea.left)}`
+      + ` · dpr ${window.devicePixelRatio || 1} · fonts ${document.fonts ? document.fonts.status : '—'}`;
+  }catch(ex){ return 'ch1: อ่านค่าไม่ได้ (' + esc(ex.message) + ')'; }
 }
 function dbgRefresh(){ if(DBG) dbgEl.innerHTML = dbgSummary() + dbgLines.join(''); }
 if(DBG) dbgEl.classList.add('show');
@@ -1017,6 +1031,51 @@ const valueLabels = {
     ctx.restore();
   }
 };
+/* A12.3: วาดชื่อบนแกนซ้ายเอง (กราฟ 1) — ปิด ticks ของ Chart.js ทิ้ง
+   เหตุผล: Chart.js "ตัดข้อความ" ตั้งแต่ตอนวัดขนาด ก่อน afterFit จะขยายพื้นที่ทัน
+   บน Safari/iOS พื้นที่ที่มันคิดให้เล็กมาก ชื่อเลยเหลือ 2-3 ตัวอักษรทั้งที่มีที่ว่างเหลือเพียบ
+   วาดเองในโซนซ้ายของ canvas (0 ถึง chartArea.left) = คุมได้เอง ไม่ขึ้นกับ engine */
+const axisNames = {
+  id:'axisNames',
+  afterDatasetsDraw(chart, args, o){
+    const names = (o && o.names) || [];
+    if(!names.length) return;
+    const ctx = chart.ctx;
+    const right = chart.chartArea.left - 8;      // ชิดขวา ห่างจากแท่ง 8px
+    const room  = right - 4;
+    if(room < 24) return;
+    const size = room < 96 ? 10.5 : 11.5;
+    ctx.save();
+    ctx.font = `${size}px 'Kanit',system-ui,sans-serif`;
+    ctx.fillStyle = '#9a9da5';
+    ctx.textAlign = 'right';
+    const meta = chart.getDatasetMeta(0);
+    meta.data.forEach((el, i) => {
+      let lines = fitLines(ctx, names[i], room, 2);
+      const lh = size + 2.5;
+      const y0 = el.y - (lines.length - 1) * lh / 2;
+      ctx.textBaseline = 'middle';
+      lines.forEach((ln, k) => ctx.fillText(ln, right, y0 + k * lh));
+    });
+    ctx.restore();
+  }
+};
+// ตัดชื่อให้พอดีความกว้างจริงที่วัดจาก canvas (ไม่ใช่เดาจากจำนวนตัวอักษร)
+function fitLines(ctx, name, room, maxLines){
+  const t = String(name == null ? '' : name);
+  if(ctx.measureText(t).width <= room) return [t];
+  // หาจำนวนตัวอักษรต่อบรรทัดที่พอดีจริง แล้วค่อยตัดตามขอบคำ
+  let per = t.length;
+  while(per > 4 && ctx.measureText(t.slice(0, per)).width > room) per--;
+  const r = wrapLabel(t, per, maxLines);
+  const lines = Array.isArray(r) ? r : [r];
+  // เผื่อบรรทัดไหนยังล้น (คำยาวคำเดียว) ตัดท้ายทิ้งจนพอดี
+  return lines.map(ln => {
+    let s = ln;
+    while(s.length > 1 && ctx.measureText(s).width > room) s = s.slice(0, -1);
+    return s === ln ? s : s.slice(0, -1) + '…';
+  });
+}
 // แท่งแนวนอน: ตัวเลขต่อท้ายปลายแท่ง
 function drawBarLabelsH(chart, ctx){
   const ds = chart.data.datasets[0] || {};
@@ -1108,30 +1167,19 @@ function mountCharts(){
           borderColor:'#0a0a0b', borderWidth:1, borderRadius:5, maxBarThickness:38
         }]
       },
-      plugins:[valueLabels],
+      plugins:[valueLabels, axisNames],
       options:{
         indexAxis:'y',              // แนวนอน = ชื่อไทยยาวๆ อ่านออกบนมือถือ
         responsive:true, maintainAspectRatio:false,
-        layout:{ padding:{ right:34 } },   // เว้นที่ให้ตัวเลขท้ายแท่ง ไม่ให้โดนขอบตัด
+        // ซ้าย = โซนที่เราวาดชื่อเอง (axisNames) · ขวา = ที่ยืนของตัวเลขท้ายแท่ง
+        layout:{ padding:{ right:34, left: nameZone(c1.parentElement.clientWidth) } },
         plugins:{ legend:{display:false}, valueLabels:{ mode:'h' },
+          axisNames:{ names: rows.map(r => r.name) },
           tooltip:{ callbacks:{ label: c => ' ' + c.parsed.x + ' ชิ้น' } } },
         scales:{
           x:{ beginAtZero:true, ticks:{precision:0}, grid:{color:'#2a2c33'} },
-          // A12: ชื่อรายการไทยยาวกว่าพื้นที่แกนบนจอแคบ -> ตัดเป็นบรรทัดเอง ไม่ปล่อยให้ Chart.js ตัดทิ้ง
-          y:{ grid:{display:false},
-              // A12.1: บังคับความกว้างแกนชื่อเอง — Safari/iOS จัดสรรให้แค่ ~40px จนชื่อโดนตัดเหลือ 3 ตัวอักษร
-              // (Chrome เดสก์ท็อปให้ 148px จึงไม่เห็นปัญหา) ไม่พึ่งการวัดของ Chart.js อีกต่อไป
-              afterFit(scale){
-                const w = scale.chart.width;
-                scale.width = Math.max(86, Math.min(150, Math.round(w * 0.34)));
-              },
-              ticks:{ font:{size: c1.parentElement.clientWidth < 420 ? 11 : 12}, autoSkip:false,
-                callback(v){
-                  const nm = this.getLabelForValue(v);
-                  const w = this.chart.width;
-                  if(w >= 620) return nm;                       // กว้างพอ = ชื่อเต็มบรรทัดเดียว
-                  return wrapLabel(nm, w >= 420 ? 17 : 14, 2);  // แคบ = 2 บรรทัด (ตัดตามขอบคำ)
-                } } }
+          // A12.3: ปิด ticks ของ Chart.js — ชื่อวาดเองด้วย plugin axisNames ในโซน padding ซ้าย
+          y:{ grid:{display:false}, ticks:{ display:false }, border:{ display:false } }
         }
       }
     }));
@@ -1324,6 +1372,11 @@ function deptItemColor(catItems, id, i){
 /* A12: ตัดชื่อยาวบนแกนกราฟให้เป็นหลายบรรทัด (Chart.js รับ array = ขึ้นบรรทัดใหม่)
    ปล่อยให้ Chart.js จัดการเอง = พอจอแคบมันจะ "ตัดทิ้ง" เหลือ 2-3 ตัวอักษรจนอ่านไม่ออก
    ตัดที่ช่องว่างก่อน ไม่มีค่อยตัดดิบ (ชื่อ PPE ไทยส่วนใหญ่ไม่มีเว้นวรรค) · เกินจำนวนบรรทัดจึงใส่ … */
+// ความกว้างโซนชื่อทางซ้ายของกราฟ 1 (คิดจากความกว้างกล่องกราฟจริง ไม่ใช่ค่าคงที่)
+function nameZone(boxW){
+  const w = Number(boxW) || 320;
+  return Math.max(78, Math.min(160, Math.round(w * 0.34)));
+}
 const THAI_TAIL = /[่้๊๋ัิีึืุู็์ำะาๆๅ]/;   // อักขระที่ห้ามอยู่ต้นบรรทัด (ต้องเกาะพยัญชนะตัวหน้า)
 // ตัดคำไทยด้วยตัวตัดคำของเบราว์เซอร์ (Safari 16.4+/Chrome รองรับ) — คืน null ถ้าไม่มี ให้ไปใช้วิธีนับตัวอักษรแทน
 function thaiWords(t){
@@ -2657,6 +2710,11 @@ test('wrapLabel ชื่อยาวตัดเป็น 2 บรรทัด'
 test('wrapLabel ตัดที่ช่องว่างถ้ามี', () => {
   assertEq(wrapLabel('ตลับกรอง 2097 (งานเชื่อม)', 14, 2), ['ตลับกรอง 2097','(งานเชื่อม)']);
 });
+test('nameZone จอแคบไม่ต่ำกว่า 78px', () => assertEq(nameZone(200), 78));
+test('nameZone จอมือถือ 358px ได้ ~122px', () => assertEq(nameZone(358), 122));
+test('nameZone จอกว้างไม่เกิน 160px', () => assertEq(nameZone(1200), 160));
+test('nameZone รับค่าผิดรูปแบบ', () => assertEq(nameZone(null), 109));
+
 test('wrapLabel ตัดตามขอบคำจริง ไม่ตัดกลางคำ (Intl.Segmenter)', () => {
   assertEq(wrapLabel('แว่นตานิรภัยกันสะเก็ด', 14, 2), ['แว่นตานิรภัย','กันสะเก็ด']);
 });
