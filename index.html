@@ -1027,24 +1027,32 @@ function drawBarLabelsH(chart, ctx){
     ctx.fillText(String(v), el.x + 7, el.y);
   });
 }
-// แท่งแนวตั้ง: ตัวเลขเหนือแท่ง · แท่งแคบ (รายวัน 31 แท่งบนมือถือ) หมุนตั้งแทน · แคบมากข้ามไป ดูจาก tooltip
+// แท่งแนวตั้ง: ตัวเลขเหนือแท่ง · แท่งแคบ (รายวัน 31 แท่ง แท่งละ 6px บนมือถือ) หมุนตั้งแทน
+// แท่งแคบจนตัวเลขจะทับกัน -> ให้สิทธิ์แท่งที่ยอดสูงกว่าก่อน แล้วเว้นระยะกันชน วันที่ยอดน้อยดูจาก tooltip
 function drawBarLabelsV(chart, ctx){
-  const ds = chart.data.datasets[0] || {};
-  chart.getDatasetMeta(0).data.forEach((el, i) => {
+  const ds   = chart.data.datasets[0] || {};
+  const bars = chart.getDatasetMeta(0).data;
+  const wide = [], narrow = [];
+  bars.forEach((el, i) => {
     const v = Number((ds.data||[])[i]) || 0;
     if(!v) return;
-    const t = String(v), w = ctx.measureText(t).width;
-    ctx.fillStyle = '#eceded';
-    if(el.width >= w + 3){
-      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-      ctx.fillText(t, el.x, el.y - 4);
-    }else if(el.width >= 7){
-      ctx.save();
-      ctx.translate(el.x, el.y - 6); ctx.rotate(-Math.PI/2);
-      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      ctx.fillText(t, 0, 0);
-      ctx.restore();
-    }
+    const t = String(v);
+    (el.width >= ctx.measureText(t).width + 3 ? wide : narrow).push({ el, t, v });
+  });
+  ctx.fillStyle = '#eceded';
+  wide.forEach(b => {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText(b.t, b.el.x, b.el.y - 4);
+  });
+  const used = wide.map(b => b.el.x);
+  narrow.sort((a,b) => b.v - a.v).forEach(b => {     // ยอดสูงได้เขียนก่อน
+    if(used.some(x => Math.abs(b.el.x - x) < 13)) return;
+    used.push(b.el.x);
+    ctx.save();
+    ctx.translate(b.el.x, b.el.y - 6); ctx.rotate(-Math.PI/2);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(b.t, 0, 0);
+    ctx.restore();
   });
 }
 // แท่งซ้อน: ตัวเลขกลางช่องที่กว้างพอ (สีตัวอักษรตัดกับสีช่อง) + ยอดรวมของแผนกต่อท้ายแท่ง
