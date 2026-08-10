@@ -262,6 +262,10 @@ table.tb td.num{text-align:right;font-weight:700;color:var(--y);font-variant-num
 .chartbox{position:relative;height:300px}
 .chartbox.tall{height:340px}
 
+/* A10: แถบปุ่มกรองเดือนของแดชบอร์ด (ปุ่มทึบ = เดือนที่กำลังดูอยู่) */
+.mfilt{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+.mfilt .btn{padding:9px 15px;min-height:40px;font-size:13.5px;border-radius:9px}
+
 .filterbar{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
 .sel{background:var(--bg2);border:1.5px solid var(--line);border-radius:10px;padding:11px 13px;min-height:44px;color:var(--tx);outline:none}
 .sel:focus{border-color:var(--y)}
@@ -742,6 +746,56 @@ function dashByDept(dash){
     .sort((a,b) => b.qty - a.qty);
 }
 
+/* ---------- A10: กรองเดือนทั้งแดชบอร์ด + กราฟแผนก×อุปกรณ์ ----------
+   state.month มี 3 ค่า: null = เดือนปัจจุบัน (ค่าตั้งต้นเดิม) · '2026-07' = เดือนนั้น · 'all' = ทุกเดือน */
+const MONTH_ALL = 'all';
+// แถวดิบจาก by_dept_item (แผนก×อุปกรณ์ รายเดือน) — ym ว่างหรือ 'all' = ไม่กรองเดือน
+function deptItemRows(dash, ym){
+  const all = !ym || ym === MONTH_ALL;
+  return ((dash && dash.by_dept_item) || [])
+    .filter(x => all || String(x.ym||'') === ym)
+    .map(x => ({
+      ym:String(x.ym||''), dept:x.dept || 'ไม่ระบุ',
+      id:x.item_id, name:x.name, qty:Number(x.qty)||0
+    }));
+}
+// จัดเป็นตารางไขว้ให้กราฟแท่งซ้อน: แผนกและอุปกรณ์เรียงยอดมาก→น้อย (ยอดเท่ากันเรียงตามชื่อ กันสลับไปมาทุก render)
+function deptItemMatrix(dash, ym){
+  const dTot = {}, iTot = {}, cell = {};
+  deptItemRows(dash, ym).forEach(r => {
+    dTot[r.dept] = (dTot[r.dept]||0) + r.qty;
+    if(!iTot[r.id]) iTot[r.id] = { id:r.id, name:r.name, qty:0 };
+    iTot[r.id].qty += r.qty;
+    const k = r.dept + '\u0001' + r.id;
+    cell[k] = (cell[k]||0) + r.qty;
+  });
+  const depts = Object.keys(dTot).sort((a,b) => (dTot[b]-dTot[a]) || (a < b ? -1 : 1));
+  const items = Object.keys(iTot).map(k => iTot[k])
+    .sort((a,b) => (b.qty-a.qty) || (String(a.id) < String(b.id) ? -1 : 1));
+  return {
+    depts, items,
+    total: depts.reduce((a,d) => a + dTot[d], 0),
+    deptQty: d => dTot[d] || 0,
+    qty: (d,id) => cell[d + '\u0001' + id] || 0
+  };
+}
+// ยอดรวมต่อแผนก ตามเดือนที่เลือก — 'ทั้งหมด' ใช้ by_dept ที่ DB รวมมาให้เหมือนเดิม
+function dashByDeptM(dash, ym){
+  if(!ym || ym === MONTH_ALL) return dashByDept(dash);
+  const m = deptItemMatrix(dash, ym);
+  return m.depts.map(d => ({ dept:d, qty:m.deptQty(d) }));
+}
+// ยอดรวมรายเดือน — ใช้แทนกราฟรายวันตอนเลือก "ทั้งหมด" (แท่งรายวันข้ามหลายเดือนอ่านไม่ออก)
+function seriesByMonth(daily){
+  const acc = {};
+  (daily||[]).forEach(r => {
+    const m = monthOf(String(r.d||''));
+    if(m.length !== 7) return;
+    acc[m] = (acc[m]||0) + (Number(r.qty)||0);
+  });
+  return Object.keys(acc).sort().map(m => ({ ym:m, qty:acc[m] }));
+}
+
 // ค้นหาในหน้าประวัติ: เลขที่ใบ / แผนก / ชื่อผู้เบิก / ชื่อรายการ
 function filterHistory(history, q){
   const s = String(q||'').trim().toLowerCase();
@@ -938,6 +992,8 @@ function render(){
 
 /* ---------- กราฟ: วาดใหม่ทุกครั้งที่ render (canvas เก่าถูกทิ้งไปแล้ว) ---------- */
 let charts = [];
+// สีสำรองของกราฟแท่งซ้อน (A10) — ใช้เมื่ออุปกรณ์นั้นไม่มีสีในคลังแล้ว เช่น ถูกซ่อนไปหลังเบิก
+const DEPT_PAL = ['#ffd21e','#4a9eff','#33c481','#f0851a','#b06bff','#ff6b6b','#2ec5c5','#d8cfc0'];
 function killCharts(){ charts.forEach(c => { try{ c.destroy(); }catch(e){} }); charts = []; }
 function mountCharts(){
   killCharts();
@@ -977,7 +1033,7 @@ function mountCharts(){
 
   const cd = document.getElementById('chDept');
   if(cd){
-    const drows = dashByDept(state.dash);
+    const drows = dashByDeptM(state.dash, dashYM());   // A10: ตามเดือนที่กรองอยู่
     charts.push(new Chart(cd, {
       type:'bar',
       data:{
@@ -1002,10 +1058,52 @@ function mountCharts(){
     }));
   }
 
+  // A10: กราฟแท่งซ้อน — แผนกไหนเบิกอุปกรณ์อะไรบ้าง (สีตามชนิดอุปกรณ์)
+  const cdi = document.getElementById('chDeptItem');
+  if(cdi){
+    const cat = dashItems(state.dash);
+    const M   = deptItemMatrix(state.dash, dashYM());
+    charts.push(new Chart(cdi, {
+      type:'bar',
+      data:{
+        labels: M.depts,
+        datasets: M.items.map((it,i) => ({
+          label: it.name,
+          data: M.depts.map(d => M.qty(d, it.id)),
+          // รายการที่ถูกซ่อนไปแล้วจะไม่มีในคลัง -> ใช้สีสำรองวนไป ไม่ปล่อยให้แท่งไม่มีสี
+          backgroundColor: ((cat.find(c => c.id === it.id) || {}).color) || DEPT_PAL[i % DEPT_PAL.length],
+          borderColor:'#0a0a0b', borderWidth:1, maxBarThickness:40
+        }))
+      },
+      options:{
+        indexAxis:'y',              // แนวนอน = ชื่อแผนกไทยยาวๆ อ่านออกบนมือถือ
+        responsive:true, maintainAspectRatio:false,
+        plugins:{
+          legend:{ display:true, position:'bottom', labels:{ boxWidth:12, boxHeight:12, font:{size:11.5}, padding:10 } },
+          tooltip:{
+            filter: t => t.parsed.x > 0,          // ซ่อนอุปกรณ์ที่แผนกนั้นไม่ได้เบิก
+            callbacks:{
+              label: c => ' ' + c.dataset.label + ' · ' + c.parsed.x + ' ชิ้น',
+              footer: c => 'รวมทั้งแผนก ' + M.deptQty(M.depts[c[0].dataIndex]) + ' ชิ้น'
+            }
+          }
+        },
+        scales:{
+          x:{ stacked:true, beginAtZero:true, ticks:{precision:0}, grid:{color:'#2a2c33'} },
+          y:{ stacked:true, grid:{display:false}, ticks:{font:{size:12}} }
+        }
+      }
+    }));
+  }
+
   const c2 = document.getElementById('ch2');
   if(c2){
-    const dToday = String((state.dash && state.dash.today_date) || todayISO()).slice(0,10);
-    const ser = seriesFromDaily(state.dash && state.dash.daily, state.month || monthOf(dToday));
+    const ymNow = dashYM();
+    const allM  = ymNow === MONTH_ALL;
+    // ทั้งหมด = แท่งละเดือน (แท่งรายวันข้ามหลายเดือนอ่านไม่ออก) · เลือกเดือน = แท่งละวันเหมือนเดิม
+    const ser = allM
+      ? seriesByMonth(state.dash && state.dash.daily).map(s => ({ d:fmtM(s.ym), iso:s.ym, qty:s.qty }))
+      : seriesFromDaily(state.dash && state.dash.daily, ymNow);
     charts.push(new Chart(c2, {
       type:'bar',
       data:{
@@ -1017,7 +1115,7 @@ function mountCharts(){
         responsive:true, maintainAspectRatio:false,
         plugins:{ legend:{display:false},
           tooltip:{ callbacks:{
-            title: c => fmtD(ser[c[0].dataIndex].iso),
+            title: c => allM ? fmtM(ser[c[0].dataIndex].iso) : fmtD(ser[c[0].dataIndex].iso),
             label: c => ' ' + c.parsed.y + ' ชิ้น' } } },
         scales:{
           // จอแคบแสดงเลขวันทุกวันจะทับกัน -> ให้ Chart.js เว้นเลขเองตามความกว้างจริง
@@ -1097,7 +1195,12 @@ function viewPin(tab){
   </div>`;
 }
 
-/* ---------- แดชบอร์ด (A9: กราฟวันนี้ + กราฟรายวันกรองเดือน) ---------- */
+/* ---------- แดชบอร์ด (A9: กราฟวันนี้ + กราฟรายวันกรองเดือน · A10: กราฟแผนก×อุปกรณ์ + กรองเดือนทั้งหน้า) ---------- */
+// เดือนที่แดชบอร์ดกำลังกรองอยู่ — view กับ mountCharts ต้องใช้ค่าเดียวกันเสมอ
+function dashYM(){
+  if(state.month === MONTH_ALL) return MONTH_ALL;
+  return state.month || monthOf(String((state.dash && state.dash.today_date) || todayISO()).slice(0,10));
+}
 function viewDash(){
   if(!state.dash){
     return `<div class="empty"><div class="ic">📊</div>ยังโหลดตัวเลขแดชบอร์ดไม่สำเร็จ<br>
@@ -1106,16 +1209,30 @@ function viewDash(){
   }
   // วันที่ยึดตามที่ DB คิดมาให้ (โซนไทย) ไม่ใช่นาฬิกาเครื่องผู้ใช้ ซึ่งอาจตั้งผิดโซน
   const today = String(state.dash.today_date || todayISO()).slice(0,10);
-  const ym    = state.month || monthOf(today);
+  const ym    = dashYM();
+  const isAll = ym === MONTH_ALL;                 // A10: ดูรวมทุกเดือน
+  const ymTxt = isAll ? 'ทุกเดือน' : fmtM(ym);
   const items = dashItems(state.dash);
   const byItem = dashTodayRows(state.dash);
   const todayQty  = byItem.reduce((a,r) => a + r.qty, 0);
-  const monthQty  = seriesFromDaily(state.dash.daily, ym).reduce((a,s) => a + s.qty, 0);
+  const monthQty  = isAll
+    ? seriesByMonth(state.dash.daily).reduce((a,s) => a + s.qty, 0)
+    : seriesFromDaily(state.dash.daily, ym).reduce((a,s) => a + s.qty, 0);
   const low       = lowItems(items).length;
   const totalStock = items.reduce((a,x) => a + (Number(x.stock)||0), 0);
 
   const months = monthListFromDaily(state.dash.daily, today);
-  const opts = months.map(m => `<option value="${esc(m)}" ${m===ym?'selected':''}>${fmtM(m)}</option>`).join('');
+  const opts = [`<option value="${MONTH_ALL}" ${isAll?'selected':''}>ทุกเดือน</option>`]
+    .concat(months.map(m => `<option value="${esc(m)}" ${m===ym?'selected':''}>${fmtM(m)}</option>`)).join('');
+
+  // A10: ปุ่มกรองเดือน — กรองทั้งแดชบอร์ด (ยกเว้นกราฟ 1 ที่เป็นของวันนี้โดยตัวมันเอง)
+  const mBtn = (val, label) => `<button class="btn ${ym===val?'':'ghost'} sm" data-act="setMonth" data-m="${esc(val)}">${esc(label)}</button>`;
+  const mfilt = `<div class="mfilt">
+    <span style="font-size:13px;color:var(--tx2)">ดูข้อมูลเดือน</span>
+    ${mBtn(MONTH_ALL, 'ทุกเดือน')}${months.map(m => mBtn(m, fmtM(m))).join('')}
+  </div>`;
+
+  const dItem = deptItemMatrix(state.dash, ym);
 
   const noChart = typeof Chart === 'undefined'
     ? `<div class="pill badge-dang" style="white-space:normal;display:flex;margin-bottom:14px">
@@ -1131,12 +1248,12 @@ function viewDash(){
         <tbody>${byItem.map(r => `<tr><td>${esc(r.name)}</td><td class="num">${r.qty}</td></tr>`).join('')}</tbody>
        </table></div>` : '';
 
-  return `${noChart}
+  return `${noChart}${mfilt}
   <div class="kpis">
     <div class="kpi"><div class="eyebrow">เบิกวันนี้</div>
       <div class="bignum">${todayQty}</div><div class="cap">ชิ้น · ${byItem.length} รายการ</div></div>
-    <div class="kpi plain"><div class="eyebrow">${esc(fmtM(ym))}</div>
-      <div class="bignum">${monthQty}</div><div class="cap">ชิ้นทั้งเดือน</div></div>
+    <div class="kpi plain"><div class="eyebrow">${esc(ymTxt)}</div>
+      <div class="bignum">${monthQty}</div><div class="cap">ชิ้น${isAll?'รวมทุกเดือน':'ทั้งเดือน'}</div></div>
     <div class="kpi plain"><div class="eyebrow">คงเหลือในคลัง</div>
       <div class="bignum">${totalStock}</div><div class="cap">ชิ้น · ${state.dash.req_count||0} ใบเบิกสะสม</div></div>
     <div class="kpi ${low?'dang':''}"><div class="eyebrow">ต้องเติมสต็อก</div>
@@ -1150,24 +1267,34 @@ function viewDash(){
   </div>
 
   <div class="panel">
-    <div class="eyebrow">กราฟ 2</div>
+    <div class="eyebrow">กราฟ 2 · ${esc(ymTxt)}</div>
     <h3>ยอดเบิกสะสมต่อแผนก</h3>
-    ${dashByDept(state.dash).length
+    ${dashByDeptM(state.dash, ym).length
       ? `<div class="chartbox tall"><canvas id="chDept"></canvas></div>
          <p style="color:var(--tx3);font-size:12.5px;margin:12px 0 0">รวมจำนวนชิ้นที่จ่ายจริงของแต่ละแผนก · แตะแท่งเพื่อดูจำนวน</p>`
-      : `<div class="empty" style="padding:34px 12px"><div class="ic">📭</div>ยังไม่มีการเบิกที่จ่ายแล้ว</div>`}
+      : `<div class="empty" style="padding:34px 12px"><div class="ic">📭</div>${isAll?'ยังไม่มีการเบิกที่จ่ายแล้ว':'เดือนนี้ยังไม่มีการเบิกที่จ่ายแล้ว'}</div>`}
   </div>
 
   <div class="panel">
-    <div class="eyebrow">กราฟ 3</div>
-    <h3>ยอดเบิกรายวัน</h3>
+    <div class="eyebrow">กราฟ 3 · ${esc(ymTxt)}</div>
+    <h3>แต่ละแผนกเบิกอุปกรณ์อะไรบ้าง</h3>
+    ${dItem.depts.length
+      ? `<div class="chartbox tall"><canvas id="chDeptItem"></canvas></div>
+         <p style="color:var(--tx3);font-size:12.5px;margin:12px 0 0">
+           แท่งเดียวของแต่ละแผนก แบ่งสีตามชนิดอุปกรณ์ · รวม ${dItem.total} ชิ้น จาก ${dItem.items.length} รายการ · แตะแท่งเพื่อดูจำนวนแยกรายการ</p>`
+      : `<div class="empty" style="padding:34px 12px"><div class="ic">📭</div>${isAll?'ยังไม่มีการเบิกที่จ่ายแล้ว':'เดือนนี้ยังไม่มีการเบิกที่จ่ายแล้ว'}</div>`}
+  </div>
+
+  <div class="panel">
+    <div class="eyebrow">กราฟ 4</div>
+    <h3>${isAll ? 'ยอดเบิกรายเดือน' : 'ยอดเบิกรายวัน'}</h3>
     <div class="filterbar">
       <span style="font-size:13px;color:var(--tx2)">เลือกเดือน</span>
       <select class="sel" id="monthSel" data-act="month">${opts}</select>
       <span style="font-size:13px;color:var(--tx3);margin-left:auto">รวม ${monthQty} ชิ้น</span>
     </div>
     <div class="chartbox tall"><canvas id="ch2"></canvas></div>
-    <p style="color:var(--tx3);font-size:12.5px;margin:12px 0 0">แต่ละแท่ง = ยอดรวมทุกรายการของวันนั้น · แตะแท่งเพื่อดูวันที่และจำนวน</p>
+    <p style="color:var(--tx3);font-size:12.5px;margin:12px 0 0">แต่ละแท่ง = ยอดรวมทุกรายการของ${isAll?'เดือนนั้น':'วันนั้น'} · แตะแท่งเพื่อดู${isAll?'เดือน':'วันที่'}และจำนวน</p>
   </div>
 
   <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -1759,6 +1886,13 @@ document.addEventListener('click', async (e) => {
     render();
   }
 
+  // A10: ปุ่มกรองเดือนของแดชบอร์ด (กรองทั้งหน้า)
+  else if(act === 'setMonth'){
+    state.month = el.dataset.m || null;
+    dlog('DASH', 'กรองเดือน ' + (state.month === MONTH_ALL ? 'ทุกเดือน' : state.month));
+    render();
+  }
+
   else if(act === 'q'){
     const id = el.dataset.id, d = Number(el.dataset.d);
     const it = state.items.find(i => i.id === id);
@@ -2262,7 +2396,15 @@ const DASH = {
   ],
   today:[{item_id:'helmet', name:'หมวกนิรภัย', qty:5}, {item_id:'boots', name:'รองเท้าเซฟตี้', qty:2}],
   daily:[{d:'2026-06-10', qty:13}, {d:'2026-07-19', qty:7}, {d:'2026-07-19', qty:3}],
-  by_dept:[{dept:'WD', qty:4}, {dept:'PC', qty:9}, {dept:'ไม่ระบุ', qty:1}]
+  by_dept:[{dept:'WD', qty:4}, {dept:'PC', qty:9}, {dept:'ไม่ระบุ', qty:1}],
+  // A10: แผนก×อุปกรณ์ รายเดือน — ยอดรวมต้องตรงกับ by_dept ด้านบน (PC 9 · WD 4 · ไม่ระบุ 1)
+  by_dept_item:[
+    {ym:'2026-07', dept:'PC', item_id:'helmet', name:'หมวกนิรภัย',    qty:6},
+    {ym:'2026-07', dept:'PC', item_id:'boots',  name:'รองเท้าเซฟตี้', qty:3},
+    {ym:'2026-07', dept:'WD', item_id:'helmet', name:'หมวกนิรภัย',    qty:2},
+    {ym:'2026-06', dept:'WD', item_id:'boots',  name:'รองเท้าเซฟตี้', qty:2},
+    {ym:'2026-06', dept:'ไม่ระบุ', item_id:'helmet', name:'หมวกนิรภัย', qty:1}
+  ]
 };
 
 test('canAccess แดชบอร์ดเข้าได้แม้ไม่มีรหัส', () => assertEq(canAccess('open', null), true));
@@ -2281,6 +2423,56 @@ test('dashByDept เรียงจากมากไปน้อย', () => ass
 test('dashByDept รวมจำนวนชิ้นถูก', () => assertEq(dashByDept(DASH)[0].qty, 9));
 test('dashByDept รับค่าว่าง', () => assertEq(dashByDept(null), []));
 test('dashByDept ไม่มี by_dept ในข้อมูล', () => assertEq(dashByDept({today:[]}), []));
+
+/* ---------- A10: กราฟแผนก×อุปกรณ์ + กรองเดือนทั้งแดชบอร์ด ---------- */
+test('deptItemRows ไม่ใส่เดือน = ทุกเดือน', () => assertEq(deptItemRows(DASH, null).length, 5));
+test('deptItemRows ทั้งหมด (all) = ทุกเดือน', () => assertEq(deptItemRows(DASH, MONTH_ALL).length, 5));
+test('deptItemRows กรองเดือน ก.ค.', () => assertEq(deptItemRows(DASH,'2026-07').length, 3));
+test('deptItemRows เดือนที่ไม่มีข้อมูล', () => assertEq(deptItemRows(DASH,'2026-05'), []));
+test('deptItemRows รับค่าว่าง', () => assertEq(deptItemRows(null, MONTH_ALL), []));
+test('deptItemRows ไม่มี by_dept_item ในข้อมูล (ข้อมูลเก่า)', () => assertEq(deptItemRows({today:[]}, MONTH_ALL), []));
+
+test('deptItemMatrix เรียงแผนกยอดมากไปน้อย', () => {
+  assertEq(deptItemMatrix(DASH, MONTH_ALL).depts, ['PC','WD','ไม่ระบุ']);
+});
+test('deptItemMatrix เรียงอุปกรณ์ยอดมากไปน้อย', () => {
+  assertEq(deptItemMatrix(DASH, MONTH_ALL).items.map(i => i.id), ['helmet','boots']);
+});
+test('deptItemMatrix ช่องไขว้ถูกต้อง', () => {
+  const M = deptItemMatrix(DASH, MONTH_ALL);
+  assertEq([M.qty('PC','helmet'), M.qty('PC','boots'), M.qty('WD','boots')], [6,3,2]);
+});
+test('deptItemMatrix ช่องที่แผนกนั้นไม่ได้เบิกเป็น 0', () => {
+  assertEq(deptItemMatrix(DASH, MONTH_ALL).qty('WD','boots2'), 0);
+});
+test('deptItemMatrix ยอดรวมแผนกตรงกับ by_dept ของ DB', () => {
+  const M = deptItemMatrix(DASH, MONTH_ALL);
+  assertEq(M.depts.map(d => M.deptQty(d)), [9,4,1]);
+});
+test('deptItemMatrix total = ผลรวมทุกแผนก', () => assertEq(deptItemMatrix(DASH, MONTH_ALL).total, 14));
+test('deptItemMatrix กรองเดือน ก.ค. เหลือ 2 แผนก', () => {
+  const M = deptItemMatrix(DASH,'2026-07');
+  assertEq([M.depts, M.total], [['PC','WD'], 11]);
+});
+test('deptItemMatrix เดือนที่ไม่มีข้อมูล', () => {
+  const M = deptItemMatrix(DASH,'2026-05');
+  assertEq([M.depts, M.items, M.total], [[], [], 0]);
+});
+test('deptItemMatrix รับค่าว่าง', () => assertEq(deptItemMatrix(null, MONTH_ALL).depts, []));
+
+test('dashByDeptM ทั้งหมด = ใช้ by_dept เดิม', () => {
+  assertEq(dashByDeptM(DASH, MONTH_ALL), dashByDept(DASH));
+});
+test('dashByDeptM กรองเดือน ก.ค.', () => {
+  assertEq(dashByDeptM(DASH,'2026-07'), [{dept:'PC',qty:9},{dept:'WD',qty:2}]);
+});
+test('dashByDeptM เดือนที่ไม่มีข้อมูล', () => assertEq(dashByDeptM(DASH,'2026-05'), []));
+
+test('seriesByMonth รวมยอดต่อเดือน เรียงเก่าไปใหม่', () => {
+  assertEq(seriesByMonth(DASH.daily), [{ym:'2026-06',qty:13},{ym:'2026-07',qty:10}]);
+});
+test('seriesByMonth รับค่าว่าง', () => assertEq(seriesByMonth(null), []));
+test('seriesByMonth ข้ามวันที่ผิดรูปแบบ', () => assertEq(seriesByMonth([{d:'xx',qty:5}]), []));
 
 test('seriesFromDaily เติมวันครบทั้งเดือน', () => assertEq(seriesFromDaily(DASH.daily,'2026-07').length, 31));
 test('seriesFromDaily รวมยอดวันซ้ำเข้าด้วยกัน', () => assertEq(seriesFromDaily(DASH.daily,'2026-07')[18].qty, 10));
