@@ -1111,7 +1111,7 @@ function mountCharts(){
           x:{ beginAtZero:true, ticks:{precision:0}, grid:{color:'#2a2c33'} },
           // A12: ชื่อรายการไทยยาวกว่าพื้นที่แกนบนจอแคบ -> ตัดเป็นบรรทัดเอง ไม่ปล่อยให้ Chart.js ตัดทิ้ง
           y:{ grid:{display:false},
-              ticks:{ font:{size:12}, autoSkip:false,
+              ticks:{ font:{size: c1.parentElement.clientWidth < 420 ? 11 : 12}, autoSkip:false,
                 callback(v){
                   const nm = this.getLabelForValue(v);
                   const w = this.chart.width;
@@ -1378,8 +1378,9 @@ function viewDash(){
     ? `<div class="pill badge-dang" style="white-space:normal;display:flex;margin-bottom:14px">
          โหลดไลบรารีกราฟ (Chart.js) ไม่สำเร็จ · ตรวจอินเทอร์เน็ต แล้วรีเฟรชหน้า</div>` : '';
 
+  // A12: ความสูงยืดตามจำนวนรายการ — ชื่อยาวถูกตัดเป็น 2 บรรทัดบนจอแคบ กล่องเตี้ยคงที่จะทำให้ชื่อทับกัน
   const g1 = byItem.length
-    ? `<div class="chartbox"><canvas id="ch1"></canvas></div>`
+    ? `<div class="chartbox" style="height:${Math.max(300, byItem.length*34)}px"><canvas id="ch1"></canvas></div>`
     : `<div class="empty" style="padding:34px 12px"><div class="ic">📭</div>วันนี้ยังไม่มีการเบิก</div>`;
 
   const t1 = byItem.length
