@@ -999,6 +999,76 @@ let charts = [];
 // สีสำรองของกราฟแท่งซ้อน (A10) — ใช้เมื่ออุปกรณ์นั้นไม่มีสีในคลังแล้ว เช่น ถูกซ่อนไปหลังเบิก
 const DEPT_PAL = ['#ffd21e','#4a9eff','#33c481','#f0851a','#b06bff','#ff6b6b','#2ec5c5','#d8cfc0'];
 function killCharts(){ charts.forEach(c => { try{ c.destroy(); }catch(e){} }); charts = []; }
+
+/* ---------- ป้ายตัวเลขบนกราฟ (A11) ----------
+   เขียนเองด้วย Chart.js plugin API ไม่โหลด chartjs-plugin-datalabels เพิ่ม
+   (มาตรฐานโปรเจค: ไม่เพิ่ม dependency ถ้าทำเองได้ · CDN น้อยลง = จุดพังน้อยลง)
+   เปิดใช้ต่อกราฟด้วย options.plugins.valueLabels = { mode:'h' | 'v' | 'stack' }   */
+const valueLabels = {
+  id:'valueLabels',
+  afterDatasetsDraw(chart, args, o){
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.font = "600 11px 'Kanit',system-ui,sans-serif";
+    const mode = (o && o.mode) || 'v';
+    if(mode === 'stack')    drawStackLabels(chart, ctx);
+    else if(mode === 'h')   drawBarLabelsH(chart, ctx);
+    else                    drawBarLabelsV(chart, ctx);
+    ctx.restore();
+  }
+};
+// แท่งแนวนอน: ตัวเลขต่อท้ายปลายแท่ง
+function drawBarLabelsH(chart, ctx){
+  const ds = chart.data.datasets[0] || {};
+  chart.getDatasetMeta(0).data.forEach((el, i) => {
+    const v = Number((ds.data||[])[i]) || 0;
+    if(!v) return;
+    ctx.fillStyle = '#eceded'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(v), el.x + 7, el.y);
+  });
+}
+// แท่งแนวตั้ง: ตัวเลขเหนือแท่ง · แท่งแคบ (รายวัน 31 แท่งบนมือถือ) หมุนตั้งแทน · แคบมากข้ามไป ดูจาก tooltip
+function drawBarLabelsV(chart, ctx){
+  const ds = chart.data.datasets[0] || {};
+  chart.getDatasetMeta(0).data.forEach((el, i) => {
+    const v = Number((ds.data||[])[i]) || 0;
+    if(!v) return;
+    const t = String(v), w = ctx.measureText(t).width;
+    ctx.fillStyle = '#eceded';
+    if(el.width >= w + 3){
+      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.fillText(t, el.x, el.y - 4);
+    }else if(el.width >= 7){
+      ctx.save();
+      ctx.translate(el.x, el.y - 6); ctx.rotate(-Math.PI/2);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText(t, 0, 0);
+      ctx.restore();
+    }
+  });
+}
+// แท่งซ้อน: ตัวเลขกลางช่องที่กว้างพอ (สีตัวอักษรตัดกับสีช่อง) + ยอดรวมของแผนกต่อท้ายแท่ง
+function drawStackLabels(chart, ctx){
+  const tot = [], endX = [], midY = [];
+  chart.data.datasets.forEach((ds, di) => {
+    const meta = chart.getDatasetMeta(di);
+    if(meta.hidden) return;
+    meta.data.forEach((el, i) => {
+      const v = Number((ds.data||[])[i]) || 0;
+      if(!v) return;
+      tot[i]  = (tot[i] || 0) + v;
+      endX[i] = Math.max(endX[i] || 0, el.x);
+      midY[i] = el.y;
+      const t = String(v);
+      if(Math.abs(el.x - el.base) < ctx.measureText(t).width + 9) return;   // ช่องแคบเกินกว่าจะใส่เลข
+      ctx.fillStyle = labelInk(ds.backgroundColor);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(t, (el.x + el.base) / 2, el.y);
+    });
+  });
+  ctx.fillStyle = '#eceded'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  tot.forEach((v, i) => { if(v) ctx.fillText(String(v), endX[i] + 7, midY[i]); });
+}
 function mountCharts(){
   killCharts();
   if(state.tab !== 'dash' || state.slip || !state.dash) return;
@@ -1022,10 +1092,12 @@ function mountCharts(){
           borderColor:'#0a0a0b', borderWidth:1, borderRadius:5, maxBarThickness:38
         }]
       },
+      plugins:[valueLabels],
       options:{
         indexAxis:'y',              // แนวนอน = ชื่อไทยยาวๆ อ่านออกบนมือถือ
         responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{display:false},
+        layout:{ padding:{ right:34 } },   // เว้นที่ให้ตัวเลขท้ายแท่ง ไม่ให้โดนขอบตัด
+        plugins:{ legend:{display:false}, valueLabels:{ mode:'h' },
           tooltip:{ callbacks:{ label: c => ' ' + c.parsed.x + ' ชิ้น' } } },
         scales:{
           x:{ beginAtZero:true, ticks:{precision:0}, grid:{color:'#2a2c33'} },
@@ -1049,10 +1121,12 @@ function mountCharts(){
           borderRadius:5, maxBarThickness:30
         }]
       },
+      plugins:[valueLabels],
       options:{
         indexAxis:'y',              // แนวนอน = รหัสแผนกหลายตัวอ่านออก
         responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{display:false},
+        layout:{ padding:{ right:34 } },
+        plugins:{ legend:{display:false}, valueLabels:{ mode:'h' },
           tooltip:{ callbacks:{ label: c => ' ' + c.parsed.x + ' ชิ้น' } } },
         scales:{
           x:{ beginAtZero:true, ticks:{precision:0}, grid:{color:'#2a2c33'} },
@@ -1079,10 +1153,13 @@ function mountCharts(){
           borderColor:'#0a0a0b', borderWidth:1, maxBarThickness:40
         }))
       },
+      plugins:[valueLabels],
       options:{
         indexAxis:'y',              // แนวนอน = ชื่อแผนกไทยยาวๆ อ่านออกบนมือถือ
         responsive:true, maintainAspectRatio:false,
+        layout:{ padding:{ right:38 } },   // เว้นที่ให้ยอดรวมท้ายแท่ง
         plugins:{
+          valueLabels:{ mode:'stack' },
           // legend วาดเป็น HTML ใต้กราฟแทน (.lgd) — ของ Chart.js กินความสูงในกล่อง
           // บนมือถือกิน 150 จาก 300px เหลือที่วาดแท่งแค่ 111px = แท่งละ 12px อ่านไม่ออก
           legend:{ display:false },
@@ -1117,9 +1194,11 @@ function mountCharts(){
         datasets:[{ label:'รวมทุกรายการ', data: ser.map(s => s.qty),
           backgroundColor:'#ffd21e', borderRadius:4, maxBarThickness:34 }]
       },
+      plugins:[valueLabels],
       options:{
         responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{display:false},
+        layout:{ padding:{ top:20 } },     // เว้นที่ให้ตัวเลขเหนือแท่งสูงสุด
+        plugins:{ legend:{display:false}, valueLabels:{ mode:'v' },
           tooltip:{ callbacks:{
             title: c => allM ? fmtM(ser[c[0].dataIndex].iso) : fmtD(ser[c[0].dataIndex].iso),
             label: c => ' ' + c.parsed.y + ' ชิ้น' } } },
@@ -1211,6 +1290,14 @@ function dashYM(){
 function deptItemColor(catItems, id, i){
   const it = (catItems||[]).find(c => c.id === id);
   return (it && it.color) || DEPT_PAL[i % DEPT_PAL.length];
+}
+// สีตัวเลขที่เขียนทับบนแท่ง — พื้นสว่างใช้ตัวหนังสือดำ พื้นเข้มใช้ขาว (เช่น ถุงมือขาว vs รองเท้าดำ)
+function labelInk(bg){
+  const m = /^#([0-9a-f]{6})$/i.exec(String(bg||'').trim());
+  if(!m) return '#0a0a0b';
+  const n = parseInt(m[1], 16);
+  const lum = 0.299*((n>>16)&255) + 0.587*((n>>8)&255) + 0.114*(n&255);
+  return lum > 150 ? '#0a0a0b' : '#eceded';
 }
 function viewDash(){
   if(!state.dash){
@@ -2472,6 +2559,16 @@ test('deptItemMatrix เดือนที่ไม่มีข้อมูล',
   assertEq([M.depts, M.items, M.total], [[], [], 0]);
 });
 test('deptItemMatrix รับค่าว่าง', () => assertEq(deptItemMatrix(null, MONTH_ALL).depts, []));
+
+/* ---------- A11: ป้ายตัวเลขบนกราฟ ---------- */
+test('labelInk พื้นสว่างใช้ตัวหนังสือดำ', () => assertEq(labelInk('#ffd21e'), '#0a0a0b'));
+test('labelInk พื้นขาวใช้ตัวหนังสือดำ', () => assertEq(labelInk('#ffffff'), '#0a0a0b'));
+test('labelInk พื้นเข้มใช้ตัวหนังสือขาว', () => assertEq(labelInk('#26292e'), '#eceded'));
+test('labelInk สีน้ำเงินเข้มใช้ตัวหนังสือขาว', () => assertEq(labelInk('#4a9eff'), '#eceded'));
+test('labelInk รับค่าว่าง/รูปแบบผิด ไม่พัง', () => {
+  assertEq([labelInk(null), labelInk(''), labelInk('เหลือง'), labelInk('#fff')],
+           ['#0a0a0b','#0a0a0b','#0a0a0b','#0a0a0b']);
+});
 
 test('deptItemColor ใช้สีจริงของรายการในคลัง', () => {
   assertEq(deptItemColor(dashItems(DASH), 'helmet', 0), '#f4b400');
