@@ -265,6 +265,10 @@ table.tb td.num{text-align:right;font-weight:700;color:var(--y);font-variant-num
 /* A10: แถบปุ่มกรองเดือนของแดชบอร์ด (ปุ่มทึบ = เดือนที่กำลังดูอยู่) */
 .mfilt{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
 .mfilt .btn{padding:9px 15px;min-height:40px;font-size:13.5px;border-radius:9px}
+/* A10: legend ของกราฟแท่งซ้อน — วาดเป็น HTML นอก canvas เพื่อไม่กินพื้นที่วาดแท่งบนมือถือ */
+.lgd{display:flex;flex-wrap:wrap;gap:7px 12px;margin-top:12px}
+.lgd .lg{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--tx2)}
+.lgd .lg i{width:11px;height:11px;border-radius:3px;flex:none;border:1px solid rgba(255,255,255,.15)}
 
 .filterbar{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
 .sel{background:var(--bg2);border:1.5px solid var(--line);border-radius:10px;padding:11px 13px;min-height:44px;color:var(--tx);outline:none}
@@ -1071,7 +1075,7 @@ function mountCharts(){
           label: it.name,
           data: M.depts.map(d => M.qty(d, it.id)),
           // รายการที่ถูกซ่อนไปแล้วจะไม่มีในคลัง -> ใช้สีสำรองวนไป ไม่ปล่อยให้แท่งไม่มีสี
-          backgroundColor: ((cat.find(c => c.id === it.id) || {}).color) || DEPT_PAL[i % DEPT_PAL.length],
+          backgroundColor: deptItemColor(cat, it.id, i),
           borderColor:'#0a0a0b', borderWidth:1, maxBarThickness:40
         }))
       },
@@ -1079,7 +1083,9 @@ function mountCharts(){
         indexAxis:'y',              // แนวนอน = ชื่อแผนกไทยยาวๆ อ่านออกบนมือถือ
         responsive:true, maintainAspectRatio:false,
         plugins:{
-          legend:{ display:true, position:'bottom', labels:{ boxWidth:12, boxHeight:12, font:{size:11.5}, padding:10 } },
+          // legend วาดเป็น HTML ใต้กราฟแทน (.lgd) — ของ Chart.js กินความสูงในกล่อง
+          // บนมือถือกิน 150 จาก 300px เหลือที่วาดแท่งแค่ 111px = แท่งละ 12px อ่านไม่ออก
+          legend:{ display:false },
           tooltip:{
             filter: t => t.parsed.x > 0,          // ซ่อนอุปกรณ์ที่แผนกนั้นไม่ได้เบิก
             callbacks:{
@@ -1201,6 +1207,11 @@ function dashYM(){
   if(state.month === MONTH_ALL) return MONTH_ALL;
   return state.month || monthOf(String((state.dash && state.dash.today_date) || todayISO()).slice(0,10));
 }
+// สีอุปกรณ์ในกราฟแท่งซ้อน — legend (HTML) กับตัวกราฟต้องเรียกตัวนี้ตัวเดียวกัน ห้ามคิดสีแยกกัน
+function deptItemColor(catItems, id, i){
+  const it = (catItems||[]).find(c => c.id === id);
+  return (it && it.color) || DEPT_PAL[i % DEPT_PAL.length];
+}
 function viewDash(){
   if(!state.dash){
     return `<div class="empty"><div class="ic">📊</div>ยังโหลดตัวเลขแดชบอร์ดไม่สำเร็จ<br>
@@ -1279,7 +1290,9 @@ function viewDash(){
     <div class="eyebrow">กราฟ 3 · ${esc(ymTxt)}</div>
     <h3>แต่ละแผนกเบิกอุปกรณ์อะไรบ้าง</h3>
     ${dItem.depts.length
-      ? `<div class="chartbox tall"><canvas id="chDeptItem"></canvas></div>
+      ? `<div class="chartbox tall" style="height:${Math.max(300, dItem.depts.length*38)}px"><canvas id="chDeptItem"></canvas></div>
+         <div class="lgd">${dItem.items.map((it,i) =>
+            `<span class="lg"><i style="background:${esc(deptItemColor(items, it.id, i))}"></i>${esc(it.name)}</span>`).join('')}</div>
          <p style="color:var(--tx3);font-size:12.5px;margin:12px 0 0">
            แท่งเดียวของแต่ละแผนก แบ่งสีตามชนิดอุปกรณ์ · รวม ${dItem.total} ชิ้น จาก ${dItem.items.length} รายการ · แตะแท่งเพื่อดูจำนวนแยกรายการ</p>`
       : `<div class="empty" style="padding:34px 12px"><div class="ic">📭</div>${isAll?'ยังไม่มีการเบิกที่จ่ายแล้ว':'เดือนนี้ยังไม่มีการเบิกที่จ่ายแล้ว'}</div>`}
@@ -2459,6 +2472,17 @@ test('deptItemMatrix เดือนที่ไม่มีข้อมูล',
   assertEq([M.depts, M.items, M.total], [[], [], 0]);
 });
 test('deptItemMatrix รับค่าว่าง', () => assertEq(deptItemMatrix(null, MONTH_ALL).depts, []));
+
+test('deptItemColor ใช้สีจริงของรายการในคลัง', () => {
+  assertEq(deptItemColor(dashItems(DASH), 'helmet', 0), '#f4b400');
+});
+test('deptItemColor รายการที่ถูกซ่อนแล้ว ใช้สีสำรอง', () => {
+  assertEq(deptItemColor(dashItems(DASH), 'gone', 1), DEPT_PAL[1]);
+});
+test('deptItemColor สีสำรองวนรอบเมื่อรายการเยอะกว่าจานสี', () => {
+  assertEq(deptItemColor([], 'x', DEPT_PAL.length), DEPT_PAL[0]);
+});
+test('deptItemColor รับคลังว่าง/null', () => assertEq(deptItemColor(null, 'x', 0), DEPT_PAL[0]));
 
 test('dashByDeptM ทั้งหมด = ใช้ by_dept เดิม', () => {
   assertEq(dashByDeptM(DASH, MONTH_ALL), dashByDept(DASH));
