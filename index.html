@@ -313,6 +313,11 @@ table.tb td.num{text-align:right;font-weight:700;color:var(--y);font-variant-num
 .storeprint{margin-top:10px}
 /* แผงติดตามสถานะใบเบิก (หน้าเบิกของ จป) */
 .tracklist{display:flex;flex-direction:column;gap:8px}
+/* แถบเลื่อนหน้า (5 ใบต่อหน้า) — ปุ่มอยู่คนละฝั่ง เลขหน้าอยู่กลาง กดง่ายบนมือถือ */
+.pager{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:12px}
+/* flex 1 1 90px + min-width 0 = จอแคบให้ข้อความกลางขึ้นบรรทัดใหม่ในช่องตัวเอง ปุ่มยังอยู่แถวเดียวกัน */
+.pager .pginfo{font-size:12.5px;color:var(--tx3);text-align:center;flex:1 1 90px;min-width:0}
+.pager .btn[disabled]{opacity:.35}
 .trackrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 11px;background:var(--bg2);border:1px solid var(--line);border-radius:9px;font-size:13.5px}
 .trackrow .reqid{font-weight:700;color:var(--y);font-size:14px}
 .trackrow .sub{flex:1;min-width:0;color:var(--tx2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -532,7 +537,8 @@ const state = {
   // ---- แท็บสโตร์ (จ่ายของ) ----
   store:[],                  // ใบเบิกทั้งหมดพร้อมสถานะจ่าย (store_get_requisitions)
   storeMsg:null,             // { ok:bool, text } = แถบแจ้งผลจ่าย/ยกเลิกจ่าย
-  storeConfirm:null          // REQ id ที่กำลังถามยืนยันยกเลิกจ่าย (รหัสแม่)
+  storeConfirm:null,         // REQ id ที่กำลังถามยืนยันยกเลิกจ่าย (รหัสแม่)
+  trackPage:1                // หน้าที่เปิดอยู่ของแผงติดตามสถานะใบเบิก (5 ใบต่อหน้า)
 };
 // รหัสเก็บในหน่วยความจำเท่านั้น รีเฟรช = ลืม (ไม่เขียนลง localStorage เด็ดขาด)
 // ต้องเก็บตัวรหัสไว้เพราะ RPC ทุกตัวต้องส่งรหัสไปให้ Postgres ตรวจซ้ำทุกครั้ง
@@ -685,6 +691,7 @@ function validateItem(f, items, isNew){
 
 /* ---------- เฟส 2: สรุปยอด (pure ทั้งหมด ทดสอบด้วย ?test=1) ---------- */
 const EXPIRY_WARN_M = 3;   // เตือน "ใกล้หมดอายุ" ล่วงหน้า 3 เดือน (เดย์เลือกเอง 19 ก.ค. 2569)
+const TRACK_PER_PAGE = 5;  // แผงติดตามสถานะใบเบิก แสดงกี่ใบต่อหน้า (เดย์สั่ง 11 ส.ค. 2569)
 
 // ⚠️ Postgres เก็บ created_at เป็น UTC และ req_date ก็มาจาก current_date ฝั่ง UTC
 //    กะดึกที่เบิกตี 5 ไทย = ยังเป็น "เมื่อวาน" ในสายตา UTC → ยอด "วันนี้" จะเพี้ยน
@@ -876,6 +883,7 @@ async function loadStore(){
   const { data, error } = await sb.rpc('store_get_requisitions', { p_pin: userPin, p_limit: 1000 });
   if(error) throw error;
   state.store = data || [];
+  state.trackPage = 1;   // โหลดรายการใหม่ = กลับหน้าแรก ไม่งั้นเบิกใบใหม่แล้วยังค้างอยู่หน้าท้ายๆ มองไม่เห็น
   const pend = state.store.filter(r => r.status !== 'issued').length;
   dlog('LOAD', `โหลดใบเบิกฝั่งสโตร์ ${state.store.length} ใบ (รอจ่าย ${pend})`);
 }
@@ -1671,6 +1679,21 @@ function storeCounts(list){
   const issued = (list||[]).filter(r => r.status === 'issued').length;
   return { total:(list||[]).length, issued, pending:(list||[]).length - issued };
 }
+// แบ่งหน้า list ทีละ per รายการ — page เกินขอบถูกดึงกลับให้อยู่ในช่วงเสมอ (ลบใบไปแล้วหน้าค้างไม่พัง)
+// คืน from/to เป็นลำดับที่คนอ่าน (เริ่มที่ 1) · list ว่าง = หน้า 1 จาก 1 · from 0 to 0
+function pageSlice(list, page, per){
+  const arr = Array.isArray(list) ? list : [];
+  const n   = Math.max(1, Number(per) || 5);
+  const pages = Math.max(1, Math.ceil(arr.length / n));
+  const p     = Math.min(pages, Math.max(1, Math.floor(Number(page)) || 1));
+  const start = (p - 1) * n;
+  return {
+    rows: arr.slice(start, start + n),
+    page: p, pages, per: n, total: arr.length,
+    from: arr.length ? start + 1 : 0,
+    to:   Math.min(start + n, arr.length)
+  };
+}
 // แปลงใบเบิกฝั่งสโตร์ 1 ใบ -> slip สำหรับ viewDoc (ใช้พิมพ์ใบเซ็นรับของหน้าจ่าย)
 // ผู้จ่าย: จ่ายแล้ว = ชื่อคนจ่ายจริง / ยังไม่จ่าย = ว่างไว้ให้เซ็นเอง
 function storeSlip(r){
@@ -1967,7 +1990,8 @@ function reqTrackPanel(){
   const list = state.store || [];
   if(!list.length) return '';
   const c = storeCounts(list);
-  const rows = list.map(r => {
+  const pg = pageSlice(list, state.trackPage, TRACK_PER_PAGE);   // แสดงทีละ 5 ใบ ที่เหลือขึ้นหน้าใหม่
+  const rows = pg.rows.map(r => {
     const [bl, bc] = dispenseBadge(r.status);
     const sub = r.status === 'issued'
       ? `จ่ายโดย ${esc(r.issued_by||'—')} · ${esc(fmtDT(r.issued_at))}`
@@ -1978,6 +2002,14 @@ function reqTrackPanel(){
       <span class="pill ${bc}">${bl}</span>
     </div>`;
   }).join('');
+  // ปุ่มเลื่อนหน้า — โชว์เฉพาะตอนมีเกิน 1 หน้า (ใบน้อยไม่ต้องมีปุ่มมารก)
+  const pager = pg.pages > 1 ? `<div class="pager">
+    <button class="btn ghost sm" data-act="trackPage" data-p="${pg.page - 1}"
+      ${pg.page <= 1 ? 'disabled' : ''}>← ก่อนหน้า</button>
+    <span class="pginfo">หน้า ${pg.page} จาก ${pg.pages} · ใบที่ ${pg.from}-${pg.to} จาก ${pg.total}</span>
+    <button class="btn ghost sm" data-act="trackPage" data-p="${pg.page + 1}"
+      ${pg.page >= pg.pages ? 'disabled' : ''}>ถัดไป →</button>
+  </div>` : '';
   return `<div class="panel">
     <div class="eyebrow">ติดตามสถานะใบเบิก</div>
     <div class="storecount">
@@ -1985,6 +2017,7 @@ function reqTrackPanel(){
       <span class="pill badge-ok">จ่ายแล้ว ${c.issued} ใบ</span>
     </div>
     <div class="tracklist">${rows}</div>
+    ${pager}
   </div>`;
 }
 
@@ -2141,6 +2174,12 @@ document.addEventListener('click', async (e) => {
   if(act === 'tab'){
     state.tab = el.dataset.tab; state.slip = null; state.pinMsg = null;
     state.storeMsg = null; state.storeConfirm = null;   // ล้างแถบแจ้ง/ยืนยันของแท็บสโตร์
+    render();
+  }
+
+  // เลื่อนหน้าแผงติดตามสถานะใบเบิก (5 ใบต่อหน้า) — pageSlice ดึงเลขหน้าที่เกินขอบกลับมาเอง
+  else if(act === 'trackPage'){
+    state.trackPage = Number(el.dataset.p) || 1;
     render();
   }
 
@@ -2916,6 +2955,29 @@ test('storeCounts รายการว่างไม่พัง', () => {
   assertEq([r.total, r.pending, r.issued], [0, 0, 0]);
 });
 test('storeCounts รับ null ไม่พัง', () => assertEq(storeCounts(null).total, 0));
+// pageSlice — แบ่งหน้าแผงติดตามสถานะใบเบิก (5 ใบต่อหน้า)
+const L32 = Array.from({length:32}, (_,i) => i + 1);
+test('pageSlice หน้าแรกได้ 5 ใบแรก', () => {
+  const p = pageSlice(L32, 1, 5);
+  assertEq([p.rows.length, p.rows[0], p.rows[4], p.page, p.pages], [5, 1, 5, 1, 7]);
+});
+test('pageSlice หน้ากลางเลื่อนถูกช่วง', () => {
+  const p = pageSlice(L32, 3, 5);
+  assertEq([p.rows[0], p.rows[4], p.from, p.to], [11, 15, 11, 15]);
+});
+test('pageSlice หน้าสุดท้ายเหลือเศษ 2 ใบ', () => {
+  const p = pageSlice(L32, 7, 5);
+  assertEq([p.rows.length, p.rows[0], p.from, p.to, p.total], [2, 31, 31, 32, 32]);
+});
+test('pageSlice หน้าเกินขอบดึงกลับหน้าสุดท้าย', () => assertEq(pageSlice(L32, 99, 5).page, 7));
+test('pageSlice หน้าติดลบ/ศูนย์ดึงกลับหน้าแรก', () => assertEq([pageSlice(L32, 0, 5).page, pageSlice(L32, -3, 5).page], [1, 1]));
+test('pageSlice รายการว่าง = หน้า 1 จาก 1', () => {
+  const p = pageSlice([], 1, 5);
+  assertEq([p.rows.length, p.pages, p.from, p.to, p.total], [0, 1, 0, 0, 0]);
+});
+test('pageSlice รับ null ไม่พัง', () => assertEq(pageSlice(null, 2, 5).total, 0));
+test('pageSlice น้อยกว่า 1 หน้า ไม่ต้องมีปุ่ม', () => assertEq(pageSlice([1,2,3], 1, 5).pages, 1));
+test('pageSlice per ผิดรูปแบบใช้ค่า 5', () => assertEq(pageSlice(L32, 1, 0).per, 5));
 test('fmtDT รับค่าว่าง', () => assertEq(fmtDT(''), '—'));
 test('fmtDT รับ null', () => assertEq(fmtDT(null), '—'));
 test('fmtDT แสดงวัน+เวลาไทย (+7 ชม.)', () => assertEq(fmtDT('2026-07-19T02:30:00Z'), '19 ก.ค. 2026 09:30 น.'));
