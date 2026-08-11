@@ -296,6 +296,20 @@ table.tb td.num{text-align:right;font-weight:700;color:var(--y);font-variant-num
 
 /* ---------- แท็บสโตร์ (จ่ายของ) ---------- */
 .storecount{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:14px}
+/* สรุปของคงเหลือในคลัง — แถวเดียวจบ กวาดตาอ่านเลขได้เร็ว (เดย์สั่ง 11 ส.ค. 2569) */
+.stockrow{display:flex;align-items:center;gap:11px;padding:11px 2px;border-bottom:1px solid var(--line)}
+.stockrow:last-child{border-bottom:0}
+.stockrow .sw{width:22px;height:22px;border-radius:7px;flex:none;border:1px solid rgba(255,255,255,.1)}
+.stockrow .nm{flex:1;min-width:0}
+.stockrow .nm b{display:block;font-size:14.5px;font-weight:600;line-height:1.3}
+.stockrow .nm i{font-style:normal;font-size:11.5px;color:var(--tx3)}
+/* หมวด + ป้ายสถานะ อยู่บรรทัดล่างของชื่อ — จอแคบชื่อจะได้ไม่ถูกบีบจนแตกหลายบรรทัด */
+.stockrow .nm .sub{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:2px}
+.stockrow .nm .sub .pill{font-size:11px;padding:3px 8px}
+/* ตัวเลขอยู่คนละช่องกับหน่วย = เลขทุกแถวจบที่ขอบเดียวกัน กวาดตาเทียบกันได้ */
+.stockrow .amt{display:flex;align-items:baseline;justify-content:flex-end;gap:5px;white-space:nowrap;flex:none}
+.stockrow .amt .stocknum{min-width:56px;text-align:right}
+.stockrow .amt .u{width:38px;font-size:11.5px;color:var(--tx3);font-weight:400}
 .storelist{display:flex;flex-direction:column;gap:12px}
 .storecard{border:1px solid var(--line);border-radius:12px;padding:14px 15px;background:var(--bg2)}
 .storecard.pending{border-left:4px solid var(--orange)}
@@ -538,7 +552,8 @@ const state = {
   store:[],                  // ใบเบิกทั้งหมดพร้อมสถานะจ่าย (store_get_requisitions)
   storeMsg:null,             // { ok:bool, text } = แถบแจ้งผลจ่าย/ยกเลิกจ่าย
   storeConfirm:null,         // REQ id ที่กำลังถามยืนยันยกเลิกจ่าย (รหัสแม่)
-  trackPage:1                // หน้าที่เปิดอยู่ของแผงติดตามสถานะใบเบิก (5 ใบต่อหน้า)
+  trackPage:1,               // หน้าที่เปิดอยู่ของแผงติดตามสถานะใบเบิก (5 ใบต่อหน้า)
+  stockFilter:'all'          // ตัวกรองหน้าคลัง PPE: 'all' = ทุกรายการ · 'has' = เฉพาะที่ยังมีของ
 };
 // รหัสเก็บในหน่วยความจำเท่านั้น รีเฟรช = ลืม (ไม่เขียนลง localStorage เด็ดขาด)
 // ต้องเก็บตัวรหัสไว้เพราะ RPC ทุกตัวต้องส่งรหัสไปให้ Postgres ตรวจซ้ำทุกครั้ง
@@ -734,6 +749,22 @@ function expiryOf(expiry, todayYM, warnM){
 // รายการที่ต้องเตือนในหน้าคลัง
 function lowItems(items){
   return (items||[]).filter(it => statusOf(it)[1] !== 'badge-ok');
+}
+// สรุปยอดคลังทั้งหมด — รวมกี่ชิ้น / มีของกี่รายการ / หมดกี่รายการ (คงเหลือติดลบนับเป็นหมด)
+function stockTotals(items){
+  const arr = Array.isArray(items) ? items : [];
+  let qty = 0, has = 0;
+  arr.forEach(it => {
+    const n = Number(it && it.stock) || 0;
+    qty += n;
+    if(n > 0) has++;
+  });
+  return { qty, has, out: arr.length - has, total: arr.length };
+}
+// กรองรายการคลัง: 'has' = เฉพาะที่ยังมีของ (คงเหลือมากกว่า 0) · ค่าอื่น = ทั้งหมด
+function filterStock(items, mode){
+  const arr = Array.isArray(items) ? items : [];
+  return mode === 'has' ? arr.filter(it => (Number(it && it.stock) || 0) > 0) : arr;
 }
 function expiringItems(items, todayYM, warnM){
   return (items||[]).filter(it => {
@@ -1592,7 +1623,39 @@ function viewStock(){
       <span class="pill ${e[1]}">${esc(e[0])}</span></div>`;
   });
 
-  const rows = state.items.map(it => {
+  // สรุปของคงเหลือ + ปุ่มกรอง — กรองพร้อมกันทั้งแผงสรุปและตารางด้านล่าง (ปุ่มเดียวคุมทั้งหน้า)
+  const tot  = stockTotals(state.items);
+  const shown = filterStock(state.items, state.stockFilter);
+  const fBtn = (val, label) => `<button class="btn ${state.stockFilter===val?'':'ghost'} sm"
+    data-act="stockFilter" data-f="${esc(val)}">${esc(label)}</button>`;
+  const sumRows = shown.map(it => {
+    const [txt,cls] = statusOf(it);
+    const sc = it.stock <= 0 ? 'out' : (it.stock < it.min ? 'low' : '');
+    return `<div class="stockrow">
+      <span class="sw" style="background:${esc(it.color)}"></span>
+      <span class="nm"><b>${esc(it.name)}</b>
+        <span class="sub"><i>${esc(it.cat)}</i>${cls !== 'badge-ok' ? `<span class="pill ${cls}">${txt}</span>` : ''}</span></span>
+      <span class="amt"><span class="stocknum ${sc}">${it.stock}</span>
+        <span class="u"> ${esc(it.unit)}</span></span>
+    </div>`;
+  }).join('');
+  const sumHtml = `<div class="panel">
+    <div class="eyebrow">สรุปของคงเหลือ</div>
+    <h3>ตอนนี้ในคลังมีอะไรเหลือเท่าไหร่</h3>
+    <div class="storecount">
+      <span class="pill badge-ok">รวม ${tot.qty} ชิ้น</span>
+      <span class="pill" style="background:var(--card2);color:var(--tx2)">มีของ ${tot.has} รายการ</span>
+      ${tot.out ? `<span class="pill badge-dang">หมดแล้ว ${tot.out} รายการ</span>` : ''}
+    </div>
+    <div class="mfilt">
+      ${fBtn('all', `ทั้งหมด (${tot.total})`)}${fBtn('has', `เฉพาะที่มีของ (${tot.has})`)}
+    </div>
+    ${shown.length
+      ? `<div class="stocklist">${sumRows}</div>`
+      : `<div class="empty" style="padding:30px 12px"><div class="ic">📦</div>ไม่มีรายการที่ยังมีของเหลือ</div>`}
+  </div>`;
+
+  const rows = shown.map(it => {
     const [txt,cls] = statusOf(it);
     const e = expiryOf(it.expiry, ym, EXPIRY_WARN_M);
     const sc = it.stock <= 0 ? 'out' : (it.stock < it.min ? 'low' : '');
@@ -1625,11 +1688,13 @@ function viewStock(){
       <span class="when">${esc(fmtD(dayKeyTH(m.created_at)))}</span></div>`;
   }).join('');
 
-  return `${lowHtml}${expHtml}
+  return `${lowHtml}${expHtml}${sumHtml}
   <div class="panel">
     <div class="eyebrow">คลังทั้งหมด</div>
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <h3 style="flex:1;min-width:180px">รายการ PPE ${state.items.length} รายการ</h3>
+      <h3 style="flex:1;min-width:180px">รายการ PPE ${shown.length === state.items.length
+        ? state.items.length + ' รายการ'
+        : 'แสดง ' + shown.length + ' จาก ' + state.items.length + ' รายการ'}</h3>
       <button class="btn sm" data-act="itemNew">＋ เพิ่มรายการใหม่</button>
     </div>
     <div class="tbwrap"><table class="tb">
@@ -2174,6 +2239,13 @@ document.addEventListener('click', async (e) => {
   if(act === 'tab'){
     state.tab = el.dataset.tab; state.slip = null; state.pinMsg = null;
     state.storeMsg = null; state.storeConfirm = null;   // ล้างแถบแจ้ง/ยืนยันของแท็บสโตร์
+    render();
+  }
+
+  // ปุ่มกรองหน้าคลัง PPE — คุมทั้งแผงสรุปและตารางคลังทั้งหมดพร้อมกัน
+  else if(act === 'stockFilter'){
+    state.stockFilter = el.dataset.f || 'all';
+    dlog('STOCK', 'กรอง ' + (state.stockFilter === 'has' ? 'เฉพาะที่มีของ' : 'ทั้งหมด'));
     render();
   }
 
@@ -2978,6 +3050,23 @@ test('pageSlice รายการว่าง = หน้า 1 จาก 1', ()
 test('pageSlice รับ null ไม่พัง', () => assertEq(pageSlice(null, 2, 5).total, 0));
 test('pageSlice น้อยกว่า 1 หน้า ไม่ต้องมีปุ่ม', () => assertEq(pageSlice([1,2,3], 1, 5).pages, 1));
 test('pageSlice per ผิดรูปแบบใช้ค่า 5', () => assertEq(pageSlice(L32, 1, 0).per, 5));
+// stockTotals / filterStock — สรุปของคงเหลือหน้าคลัง PPE
+const STK = [{id:'a',stock:67,min:10},{id:'b',stock:0,min:5},{id:'c',stock:24,min:30},{id:'d',stock:-2,min:1}];
+test('stockTotals รวมชิ้น/มีของ/หมด', () => {
+  const t = stockTotals(STK);
+  assertEq([t.qty, t.has, t.out, t.total], [89, 2, 2, 4]);
+});
+test('stockTotals คงเหลือติดลบนับเป็นหมด', () => assertEq(stockTotals([{stock:-5}]).has, 0));
+test('stockTotals รายการว่าง', () => {
+  const t = stockTotals([]);
+  assertEq([t.qty, t.has, t.out, t.total], [0, 0, 0, 0]);
+});
+test('stockTotals รับ null ไม่พัง', () => assertEq(stockTotals(null).qty, 0));
+test('stockTotals stock ไม่ใช่ตัวเลขนับเป็น 0', () => assertEq(stockTotals([{stock:null},{stock:'x'}]).qty, 0));
+test("filterStock 'has' เอาเฉพาะที่คงเหลือมากกว่า 0", () => assertEq(filterStock(STK,'has').map(x=>x.id), ['a','c']));
+test("filterStock 'all' ได้ครบทุกรายการ", () => assertEq(filterStock(STK,'all').length, 4));
+test('filterStock โหมดไม่รู้จัก = ทั้งหมด', () => assertEq(filterStock(STK,'มั่ว').length, 4));
+test('filterStock รับ null ไม่พัง', () => assertEq(filterStock(null,'has').length, 0));
 test('fmtDT รับค่าว่าง', () => assertEq(fmtDT(''), '—'));
 test('fmtDT รับ null', () => assertEq(fmtDT(null), '—'));
 test('fmtDT แสดงวัน+เวลาไทย (+7 ชม.)', () => assertEq(fmtDT('2026-07-19T02:30:00Z'), '19 ก.ค. 2026 09:30 น.'));
