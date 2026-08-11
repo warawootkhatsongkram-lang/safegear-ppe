@@ -554,7 +554,10 @@ const state = {
   storeMsg:null,             // { ok:bool, text } = แถบแจ้งผลจ่าย/ยกเลิกจ่าย
   storeConfirm:null,         // REQ id ที่กำลังถามยืนยันยกเลิกจ่าย (รหัสแม่)
   trackPage:1,               // หน้าที่เปิดอยู่ของแผงติดตามสถานะใบเบิก (5 ใบต่อหน้า)
-  stockFilter:'all'          // ตัวกรองหน้าคลัง PPE: 'all' = ทุกรายการ · 'has' = เฉพาะที่ยังมีของ
+  stockFilter:'all',         // ตัวกรองหน้าคลัง PPE: 'all' = ทุกรายการ · 'has' = เฉพาะที่ยังมีของ
+  // A16: เดือนของกราฟ 5 (แยกประเภท PPE) — ตั้งต้น 'ทุกเดือน' ตามที่เดย์สั่ง
+  // เขียน 'all' ตรงๆ ไม่ใช้ MONTH_ALL เพราะ const นั้นประกาศทีหลังในไฟล์ (ตอนนี้ยังอ่านไม่ได้)
+  catMonth:'all'
 };
 // รหัสเก็บในหน่วยความจำเท่านั้น รีเฟรช = ลืม (ไม่เขียนลง localStorage เด็ดขาด)
 // ต้องเก็บตัวรหัสไว้เพราะ RPC ทุกตัวต้องส่งรหัสไปให้ Postgres ตรวจซ้ำทุกครั้ง
@@ -847,6 +850,24 @@ function deptItemMatrix(dash, ym){
     deptQty: d => dTot[d] || 0,
     qty: (d,id) => cell[d + '\u0001' + id] || 0
   };
+}
+// A16: รวมยอดเบิกตาม "ประเภท PPE" (คอลัมน์ cat ของรายการในคลัง) — ym ว่าง/'all' = ทุกเดือน
+// รายการที่ถูกลบออกจากคลังไปแล้วยังมียอดเบิกค้างอยู่ -> จัดเข้ากลุ่ม 'ไม่ระบุประเภท' ไม่ทิ้งยอด
+function catTotals(dash, ym){
+  const byId = {};
+  dashItems(dash).forEach(i => { byId[i.id] = i; });
+  const acc = {};
+  deptItemRows(dash, ym).forEach(r => {
+    const it  = byId[r.id];
+    const cat = (it && String(it.cat || '').trim()) || 'ไม่ระบุประเภท';
+    if(!acc[cat]) acc[cat] = { qty:0, ids:{} };
+    acc[cat].qty  += r.qty;
+    acc[cat].ids[r.id] = 1;
+  });
+  // ยอดมาก→น้อย · ยอดเท่ากันเรียงตามชื่อ กันแท่งสลับที่ไปมาทุกครั้งที่ render
+  return Object.keys(acc)
+    .map(k => ({ cat:k, qty:acc[k].qty, items:Object.keys(acc[k].ids).length }))
+    .sort((a,b) => (b.qty - a.qty) || (a.cat < b.cat ? -1 : 1));
 }
 // ยอดรวมต่อแผนก ตามเดือนที่เลือก — 'ทั้งหมด' ใช้ by_dept ที่ DB รวมมาให้เหมือนเดิม
 function dashByDeptM(dash, ym){
@@ -1342,6 +1363,40 @@ function mountCharts(){
       }
     }));
   }
+  // A16: กราฟ 5 — ยอดเบิกแยกตามประเภท PPE (มีปุ่มกรองเดือนของตัวเอง ตั้งต้นทุกเดือน)
+  const c5 = document.getElementById('ch5');
+  if(c5){
+    const rows = catTotals(state.dash, state.catMonth || MONTH_ALL);
+    charts.push(new Chart(c5, {
+      type:'bar',
+      data:{
+        labels: rows.map(r => r.cat),
+        datasets:[{
+          label:'จำนวนชิ้น',
+          data: rows.map(r => r.qty),
+          backgroundColor: rows.map((r,i) => DEPT_PAL[i % DEPT_PAL.length]),
+          borderColor:'#0a0a0b', borderWidth:1, borderRadius:5, maxBarThickness:38
+        }]
+      },
+      plugins:[valueLabels, axisNames],
+      options:{
+        indexAxis:'y',              // แนวนอน = ชื่อประเภทภาษาไทยอ่านออกบนมือถือ
+        responsive:true, maintainAspectRatio:false,
+        layout:{ padding:{ right:34, left: nameZone(c5.parentElement.clientWidth) } },
+        plugins:{ legend:{display:false}, valueLabels:{ mode:'h' },
+          axisNames:{ el:'ax5', names: rows.map(r => r.cat) },
+          tooltip:{ callbacks:{
+            label: c => ' ' + c.parsed.x + ' ชิ้น',
+            footer: c => 'จาก ' + rows[c[0].dataIndex].items + ' รายการในประเภทนี้' } } },
+        scales:{
+          x:{ beginAtZero:true, ticks:{precision:0}, grid:{color:'#2a2c33'} },
+          // ชื่อประเภทวาดเองด้วย plugin axisNames (HTML) เหมือนกราฟ 1 — ปิด ticks ของ Chart.js
+          y:{ grid:{display:false}, ticks:{ display:false }, border:{ display:false } }
+        }
+      }
+    }));
+  }
+
   // A12.4: กราฟวาดจริงหลัง frame ถัดไป -> รีเฟรช DEBUG PANEL อีกรอบ ไม่งั้นบรรทัด ch1/ax1 ค้างค่าเก่า
   if(DBG) setTimeout(dbgRefresh, 400);
 }
@@ -1528,6 +1583,15 @@ function viewDash(){
 
   const dItem = deptItemMatrix(state.dash, ym);
 
+  // A16: กราฟ 5 มีปุ่มกรองเดือนของตัวเอง (ตั้งต้น "ทุกเดือน") ไม่ผูกกับตัวกรองด้านบนที่ตั้งต้นเป็นเดือนปัจจุบัน
+  const catYm    = state.catMonth || MONTH_ALL;
+  const isCatAll = catYm === MONTH_ALL;
+  const catYmTxt = isCatAll ? 'ทุกเดือน' : fmtM(catYm);
+  const cats     = catTotals(state.dash, catYm);
+  const catQty   = cats.reduce((a,c) => a + c.qty, 0);
+  const catItems = cats.reduce((a,c) => a + c.items, 0);
+  const cBtn = (val, label) => `<button class="btn ${catYm===val?'':'ghost'} sm" data-act="setCatMonth" data-m="${esc(val)}">${esc(label)}</button>`;
+
   const noChart = typeof Chart === 'undefined'
     ? `<div class="pill badge-dang" style="white-space:normal;display:flex;margin-bottom:14px">
          โหลดไลบรารีกราฟ (Chart.js) ไม่สำเร็จ · ตรวจอินเทอร์เน็ต แล้วรีเฟรชหน้า</div>` : '';
@@ -1593,6 +1657,22 @@ function viewDash(){
     </div>
     <div class="chartbox tall"><canvas id="ch2"></canvas></div>
     <p style="color:var(--tx3);font-size:12.5px;margin:12px 0 0">แต่ละแท่ง = ยอดรวมทุกรายการของ${isAll?'เดือนนั้น':'วันนั้น'} · แตะแท่งเพื่อดู${isAll?'เดือน':'วันที่'}และจำนวน</p>
+  </div>
+
+  <div class="panel">
+    <div class="eyebrow">กราฟ 5 · ${esc(catYmTxt)}</div>
+    <h3>ยอดเบิกทั้งหมด แยกตามประเภท PPE</h3>
+    <div class="mfilt">
+      <span style="font-size:13px;color:var(--tx2)">กรองเดือน</span>
+      ${cBtn(MONTH_ALL, 'ทุกเดือน')}${months.map(m => cBtn(m, fmtM(m))).join('')}
+    </div>
+    ${cats.length
+      ? `<div class="chartbox" style="height:${Math.max(300, cats.length*44)}px">
+           <canvas id="ch5"></canvas><div class="axnames" id="ax5"></div></div>
+         <p style="color:var(--tx3);font-size:12.5px;margin:12px 0 0">
+           รวม ${catQty} ชิ้น จาก ${cats.length} ประเภท (${catItems} รายการ) · นับเฉพาะใบที่จ่ายแล้ว · แตะแท่งเพื่อดูจำนวน</p>`
+      : `<div class="empty" style="padding:34px 12px"><div class="ic">📭</div>${
+          isCatAll ? 'ยังไม่มีการเบิกที่จ่ายแล้ว' : 'เดือนนี้ยังไม่มีการเบิกที่จ่ายแล้ว'}</div>`}
   </div>
 
   <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -2256,6 +2336,13 @@ document.addEventListener('click', async (e) => {
     render();
   }
 
+  // A16: ปุ่มกรองเดือนของกราฟ 5 เท่านั้น (ไม่ยุ่งกับตัวกรองด้านบนของแดชบอร์ด)
+  else if(act === 'setCatMonth'){
+    state.catMonth = el.dataset.m || MONTH_ALL;
+    dlog('DASH', 'กราฟ 5 กรอง ' + (state.catMonth === MONTH_ALL ? 'ทุกเดือน' : state.catMonth));
+    render();
+  }
+
   // A10: ปุ่มกรองเดือนของแดชบอร์ด (กรองทั้งหน้า)
   else if(act === 'setMonth'){
     state.month = el.dataset.m || null;
@@ -2829,6 +2916,45 @@ test('deptItemMatrix เดือนที่ไม่มีข้อมูล',
   assertEq([M.depts, M.items, M.total], [[], [], 0]);
 });
 test('deptItemMatrix รับค่าว่าง', () => assertEq(deptItemMatrix(null, MONTH_ALL).depts, []));
+
+/* ---------- A16: กราฟ 5 — ยอดเบิกแยกตามประเภท PPE ---------- */
+test('catTotals ทุกเดือน รวมตามประเภท เรียงยอดมากไปน้อย', () => {
+  assertEq(catTotals(DASH, MONTH_ALL).map(c => [c.cat, c.qty, c.items]),
+    [['ศีรษะ', 9, 1], ['เท้า', 5, 1]]);
+});
+test('catTotals ยอดรวมเท่ากับ deptItemMatrix.total', () => {
+  assertEq(catTotals(DASH, MONTH_ALL).reduce((a,c) => a + c.qty, 0), deptItemMatrix(DASH, MONTH_ALL).total);
+});
+test('catTotals กรองเดือน ก.ค.', () => {
+  assertEq(catTotals(DASH, '2026-07').map(c => [c.cat, c.qty]), [['ศีรษะ', 8], ['เท้า', 3]]);
+});
+test('catTotals กรองเดือน มิ.ย.', () => {
+  assertEq(catTotals(DASH, '2026-06').map(c => [c.cat, c.qty]), [['เท้า', 2], ['ศีรษะ', 1]]);
+});
+test('catTotals เดือนที่ไม่มีข้อมูล', () => assertEq(catTotals(DASH, '2026-05'), []));
+test('catTotals รายการที่ไม่มีในคลังแล้ว เข้ากลุ่มไม่ระบุประเภท', () => {
+  const d = { items:[], by_dept_item:[{ym:'2026-07', dept:'PC', item_id:'ghost', name:'ของหาย', qty:4}] };
+  assertEq(catTotals(d, MONTH_ALL).map(c => [c.cat, c.qty]), [['ไม่ระบุประเภท', 4]]);
+});
+test('catTotals นับจำนวนรายการในประเภทเดียวกันแบบไม่ซ้ำ', () => {
+  const d = {
+    items:[{id:'a', cat:'มือ'}, {id:'b', cat:'มือ'}],
+    by_dept_item:[
+      {ym:'2026-07', dept:'PC', item_id:'a', qty:2},
+      {ym:'2026-07', dept:'WD', item_id:'a', qty:3},
+      {ym:'2026-07', dept:'PC', item_id:'b', qty:1}
+    ]
+  };
+  assertEq(catTotals(d, MONTH_ALL).map(c => [c.cat, c.qty, c.items]), [['มือ', 6, 2]]);
+});
+test('catTotals ยอดเท่ากันเรียงตามชื่อประเภท', () => {
+  const d = {
+    items:[{id:'a', cat:'เท้า'}, {id:'b', cat:'ตา'}],
+    by_dept_item:[{ym:'2026-07', dept:'PC', item_id:'a', qty:5}, {ym:'2026-07', dept:'PC', item_id:'b', qty:5}]
+  };
+  assertEq(catTotals(d, MONTH_ALL).map(c => c.cat), ['ตา', 'เท้า']);
+});
+test('catTotals รับค่าว่าง', () => assertEq(catTotals(null, MONTH_ALL), []));
 
 /* ---------- A12: ตัดชื่อยาวบนแกนกราฟ ---------- */
 test('wrapLabel ชื่อสั้นกว่าเกณฑ์ คืนบรรทัดเดียว', () => assertEq(wrapLabel('ถุงมือเชื่อม', 14, 2), 'ถุงมือเชื่อม'));
