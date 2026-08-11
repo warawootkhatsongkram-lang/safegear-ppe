@@ -505,7 +505,8 @@ const TODAY = new Date();
 const APPROVER_DEFAULT = 'จป.วิชาชีพ';
 
 // รายชื่อแผนก (รหัสแผนกของบริษัท — ใช้ตอนคีย์ใบเบิกว่าแผนกไหนเบิก)
-const DEPTS = ['OFFICE','NEW OFFICE','LS','BD','GD','TB','WD','PC','PK','WH','LG','MT','R&D','QC','EDP','STORE','AC','CI','HR','SF','IT','GP','EXECUTIVE','OTHER'];
+// VISITOR / CONTRACTOR = คนนอกที่ไม่ใช่พนักงานบริษัท วางไว้ก่อน OTHER ที่เป็นตัวเลือกสุดท้าย (เดย์สั่ง 11 ส.ค. 2569)
+const DEPTS = ['OFFICE','NEW OFFICE','LS','BD','GD','TB','WD','PC','PK','WH','LG','MT','R&D','QC','EDP','STORE','AC','CI','HR','SF','IT','GP','EXECUTIVE','VISITOR','CONTRACTOR','OTHER'];
 
 // TABS: [ชื่อ, คำอธิบาย, ไอคอน, ระดับรหัสที่ต้องใช้]
 //   'open'  = ไม่ต้องใส่รหัสเลย (เดย์สั่ง 19 ก.ค. 2569 — แดชบอร์ดต้องดูได้ทันที)
