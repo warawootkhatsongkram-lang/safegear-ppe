@@ -555,9 +555,10 @@ const state = {
   storeConfirm:null,         // REQ id ที่กำลังถามยืนยันยกเลิกจ่าย (รหัสแม่)
   trackPage:1,               // หน้าที่เปิดอยู่ของแผงติดตามสถานะใบเบิก (5 ใบต่อหน้า)
   stockFilter:'all',         // ตัวกรองหน้าคลัง PPE: 'all' = ทุกรายการ · 'has' = เฉพาะที่ยังมีของ
-  // A16: เดือนของกราฟ 5 (แยกประเภท PPE) — ตั้งต้น 'ทุกเดือน' ตามที่เดย์สั่ง
+  // A16/A17: เดือนของกราฟ 5 (แยกประเภท) และกราฟ 6 (แยกชื่อ PPE) — ตั้งต้น 'ทุกเดือน' ตามที่เดย์สั่ง
   // เขียน 'all' ตรงๆ ไม่ใช้ MONTH_ALL เพราะ const นั้นประกาศทีหลังในไฟล์ (ตอนนี้ยังอ่านไม่ได้)
-  catMonth:'all'
+  catMonth:'all',
+  itemMonth:'all'
 };
 // รหัสเก็บในหน่วยความจำเท่านั้น รีเฟรช = ลืม (ไม่เขียนลง localStorage เด็ดขาด)
 // ต้องเก็บตัวรหัสไว้เพราะ RPC ทุกตัวต้องส่งรหัสไปให้ Postgres ตรวจซ้ำทุกครั้ง
@@ -868,6 +869,11 @@ function catTotals(dash, ym){
   return Object.keys(acc)
     .map(k => ({ cat:k, qty:acc[k].qty, items:Object.keys(acc[k].ids).length }))
     .sort((a,b) => (b.qty - a.qty) || (a.cat < b.cat ? -1 : 1));
+}
+// A17: ยอดเบิกรวมรายชื่อ PPE (กราฟ 6) — ยืมตัวรวมของกราฟ 3 มาใช้ ยอดจะได้ตรงกันเสมอ ไม่ต้องคิดสองที่
+// คืน [{id, name, qty}] เรียงยอดมาก→น้อย · ym ว่าง/'all' = ทุกเดือน
+function itemTotals(dash, ym){
+  return deptItemMatrix(dash, ym).items;
 }
 // ยอดรวมต่อแผนก ตามเดือนที่เลือก — 'ทั้งหมด' ใช้ by_dept ที่ DB รวมมาให้เหมือนเดิม
 function dashByDeptM(dash, ym){
@@ -1397,6 +1403,40 @@ function mountCharts(){
     }));
   }
 
+  // A17: กราฟ 6 — ยอดเบิกแยกตามชื่อ PPE (ปุ่มกรองเดือนของตัวเอง ตั้งต้นทุกเดือน)
+  const c6 = document.getElementById('ch6');
+  if(c6){
+    const cat  = dashItems(state.dash);
+    const rows = itemTotals(state.dash, state.itemMonth || MONTH_ALL);
+    charts.push(new Chart(c6, {
+      type:'bar',
+      data:{
+        labels: rows.map(r => r.name),
+        datasets:[{
+          label:'จำนวนชิ้น',
+          data: rows.map(r => r.qty),
+          // ใช้สีเดียวกับที่รายการนั้นใช้ในคลัง/กราฟ 3 (ของที่ถูกลบไปแล้วใช้สีสำรองวนไป)
+          backgroundColor: rows.map((r,i) => deptItemColor(cat, r.id, i)),
+          borderColor:'#0a0a0b', borderWidth:1, borderRadius:5, maxBarThickness:38
+        }]
+      },
+      plugins:[valueLabels, axisNames],
+      options:{
+        indexAxis:'y',              // แนวนอน = ชื่อ PPE ภาษาไทยยาวๆ อ่านออกบนมือถือ
+        responsive:true, maintainAspectRatio:false,
+        layout:{ padding:{ right:34, left: nameZone(c6.parentElement.clientWidth) } },
+        plugins:{ legend:{display:false}, valueLabels:{ mode:'h' },
+          axisNames:{ el:'ax6', names: rows.map(r => r.name) },
+          tooltip:{ callbacks:{ label: c => ' ' + c.parsed.x + ' ชิ้น' } } },
+        scales:{
+          x:{ beginAtZero:true, ticks:{precision:0}, grid:{color:'#2a2c33'} },
+          // ชื่อรายการวาดเองด้วย plugin axisNames (HTML) เหมือนกราฟ 1 — ปิด ticks ของ Chart.js
+          y:{ grid:{display:false}, ticks:{ display:false }, border:{ display:false } }
+        }
+      }
+    }));
+  }
+
   // A12.4: กราฟวาดจริงหลัง frame ถัดไป -> รีเฟรช DEBUG PANEL อีกรอบ ไม่งั้นบรรทัด ch1/ax1 ค้างค่าเก่า
   if(DBG) setTimeout(dbgRefresh, 400);
 }
@@ -1592,6 +1632,14 @@ function viewDash(){
   const catItems = cats.reduce((a,c) => a + c.items, 0);
   const cBtn = (val, label) => `<button class="btn ${catYm===val?'':'ghost'} sm" data-act="setCatMonth" data-m="${esc(val)}">${esc(label)}</button>`;
 
+  // A17: กราฟ 6 แยกตามชื่อ PPE — ปุ่มกรองเดือนของตัวเองเช่นกัน (ตั้งต้น "ทุกเดือน")
+  const itmYm    = state.itemMonth || MONTH_ALL;
+  const isItmAll = itmYm === MONTH_ALL;
+  const itmYmTxt = isItmAll ? 'ทุกเดือน' : fmtM(itmYm);
+  const itmRows  = itemTotals(state.dash, itmYm);
+  const itmQty   = itmRows.reduce((a,r) => a + r.qty, 0);
+  const iBtn = (val, label) => `<button class="btn ${itmYm===val?'':'ghost'} sm" data-act="setItemMonth" data-m="${esc(val)}">${esc(label)}</button>`;
+
   const noChart = typeof Chart === 'undefined'
     ? `<div class="pill badge-dang" style="white-space:normal;display:flex;margin-bottom:14px">
          โหลดไลบรารีกราฟ (Chart.js) ไม่สำเร็จ · ตรวจอินเทอร์เน็ต แล้วรีเฟรชหน้า</div>` : '';
@@ -1673,6 +1721,22 @@ function viewDash(){
            รวม ${catQty} ชิ้น จาก ${cats.length} ประเภท (${catItems} รายการ) · นับเฉพาะใบที่จ่ายแล้ว · แตะแท่งเพื่อดูจำนวน</p>`
       : `<div class="empty" style="padding:34px 12px"><div class="ic">📭</div>${
           isCatAll ? 'ยังไม่มีการเบิกที่จ่ายแล้ว' : 'เดือนนี้ยังไม่มีการเบิกที่จ่ายแล้ว'}</div>`}
+  </div>
+
+  <div class="panel">
+    <div class="eyebrow">กราฟ 6 · ${esc(itmYmTxt)}</div>
+    <h3>ยอดเบิกทั้งหมด แยกตามชื่อ PPE</h3>
+    <div class="mfilt">
+      <span style="font-size:13px;color:var(--tx2)">กรองเดือน</span>
+      ${iBtn(MONTH_ALL, 'ทุกเดือน')}${months.map(m => iBtn(m, fmtM(m))).join('')}
+    </div>
+    ${itmRows.length
+      ? `<div class="chartbox" style="height:${Math.max(300, itmRows.length*34)}px">
+           <canvas id="ch6"></canvas><div class="axnames" id="ax6"></div></div>
+         <p style="color:var(--tx3);font-size:12.5px;margin:12px 0 0">
+           รวม ${itmQty} ชิ้น จาก ${itmRows.length} รายการ · นับเฉพาะใบที่จ่ายแล้ว · แตะแท่งเพื่อดูจำนวน</p>`
+      : `<div class="empty" style="padding:34px 12px"><div class="ic">📭</div>${
+          isItmAll ? 'ยังไม่มีการเบิกที่จ่ายแล้ว' : 'เดือนนี้ยังไม่มีการเบิกที่จ่ายแล้ว'}</div>`}
   </div>
 
   <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -2343,6 +2407,13 @@ document.addEventListener('click', async (e) => {
     render();
   }
 
+  // A17: ปุ่มกรองเดือนของกราฟ 6 เท่านั้น
+  else if(act === 'setItemMonth'){
+    state.itemMonth = el.dataset.m || MONTH_ALL;
+    dlog('DASH', 'กราฟ 6 กรอง ' + (state.itemMonth === MONTH_ALL ? 'ทุกเดือน' : state.itemMonth));
+    render();
+  }
+
   // A10: ปุ่มกรองเดือนของแดชบอร์ด (กรองทั้งหน้า)
   else if(act === 'setMonth'){
     state.month = el.dataset.m || null;
@@ -2955,6 +3026,25 @@ test('catTotals ยอดเท่ากันเรียงตามชื่�
   assertEq(catTotals(d, MONTH_ALL).map(c => c.cat), ['ตา', 'เท้า']);
 });
 test('catTotals รับค่าว่าง', () => assertEq(catTotals(null, MONTH_ALL), []));
+
+/* ---------- A17: กราฟ 6 — ยอดเบิกแยกตามชื่อ PPE ---------- */
+test('itemTotals ทุกเดือน เรียงยอดมากไปน้อย', () => {
+  assertEq(itemTotals(DASH, MONTH_ALL).map(r => [r.id, r.name, r.qty]),
+    [['helmet','หมวกนิรภัย',9], ['boots','รองเท้าเซฟตี้',5]]);
+});
+test('itemTotals กรองเดือน ก.ค.', () => {
+  assertEq(itemTotals(DASH, '2026-07').map(r => [r.id, r.qty]), [['helmet',8], ['boots',3]]);
+});
+test('itemTotals กรองเดือน มิ.ย.', () => {
+  assertEq(itemTotals(DASH, '2026-06').map(r => [r.id, r.qty]), [['boots',2], ['helmet',1]]);
+});
+test('itemTotals เดือนที่ไม่มีข้อมูล', () => assertEq(itemTotals(DASH, '2026-05'), []));
+test('itemTotals ยอดรวมเท่ากับกราฟ 3 และกราฟ 5', () => {
+  const sum = itemTotals(DASH, MONTH_ALL).reduce((a,r) => a + r.qty, 0);
+  assertEq([sum, deptItemMatrix(DASH, MONTH_ALL).total, catTotals(DASH, MONTH_ALL).reduce((a,c) => a + c.qty, 0)],
+    [14, 14, 14]);
+});
+test('itemTotals รับค่าว่าง', () => assertEq(itemTotals(null, MONTH_ALL), []));
 
 /* ---------- A12: ตัดชื่อยาวบนแกนกราฟ ---------- */
 test('wrapLabel ชื่อสั้นกว่าเกณฑ์ คืนบรรทัดเดียว', () => assertEq(wrapLabel('ถุงมือเชื่อม', 14, 2), 'ถุงมือเชื่อม'));
