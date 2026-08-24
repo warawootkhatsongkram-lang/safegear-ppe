@@ -546,6 +546,9 @@ const state = {
   hq:'',                     // คำค้นในหน้าประวัติ
   histClear:null,            // 'ask' = กำลังถามยืนยันล้างประวัติ (รหัสแม่)
   histMsg:null,              // { ok:bool, text } = แถบแจ้งผลล้างประวัติ
+  histSub:'active',          // แท็บย่อยหน้าประวัติ: 'active' = ใบเบิกปกติ · 'cancelled' = รายการที่ยกเลิก
+  cancelAsk:null,            // REQ id ที่กำลังถามยืนยันยกเลิกใบเบิก (ต้องพิมพ์รหัสแม่ซ้ำ)
+  cancelMsg:null,            // { ok:bool, text } = แถบแจ้งผลยกเลิกใบเบิก
   adjust:null,               // { itemId, delta, reason, note, err } = modal ปรับยอด
   edit:null,                 // { form, isNew, err, confirmHide } = modal จัดการรายการ PPE (เฟส 4)
   p2loaded:false,            // โหลดข้อมูลฝั่ง admin แล้วหรือยัง
@@ -904,6 +907,16 @@ function filterHistory(history, q){
   );
 }
 
+// แยกประวัติเป็น "ใบเบิกปกติ" กับ "ใบที่ยกเลิก" สำหรับแท็บย่อยหน้าประวัติ (เดย์สั่ง 23 ส.ค. 2569)
+// ใบเก่าที่ยังไม่มี status (ก่อนฟีเจอร์นี้ หรือยังไม่ได้รัน SQL ใหม่) ถือเป็นใบปกติ
+function splitHistory(list){
+  const all = list || [];
+  return {
+    active:    all.filter(r => (r && r.status) !== 'cancelled'),
+    cancelled: all.filter(r => (r && r.status) === 'cancelled')
+  };
+}
+
 /* ============================================================
    5) DATA LAYER — Supabase
    ============================================================ */
@@ -970,6 +983,15 @@ async function undoDispenseReq(reqId){
 async function clearHistory(pin){
   dlog('HIST', 'ล้างประวัติการเบิกทั้งหมด');
   const { data, error } = await sb.rpc('admin_clear_history', { p_pin: pin });
+  if(error) throw error;
+  return data;
+}
+
+// ยกเลิกใบเบิกทีละใบ (รหัสแม่เท่านั้น — DB ตรวจซ้ำ) · ใบที่จ่ายของแล้ว DB จะคืนสต็อกให้เอง
+// ส่งรหัสที่เดย์พิมพ์ยืนยันตอนกดยกเลิก ไม่ใช่ userPin ที่ถืออยู่ (ยืนยันตัวตนซ้ำก่อน action ถอยยาก)
+async function cancelRequisition(pin, reqId){
+  dlog('HIST', `ยกเลิกใบเบิก ${reqId}`);
+  const { data, error } = await sb.rpc('admin_cancel_requisition', { p_pin: pin, p_req_id: reqId });
   if(error) throw error;
   return data;
 }
@@ -2000,7 +2022,14 @@ function downloadCSV(filename, text){
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function viewHistory(){
-  const list = filterHistory(state.history, state.hq);
+  const split = splitHistory(state.history);
+  const isCan = state.histSub === 'cancelled';               // อยู่แท็บย่อย "รายการที่ยกเลิก" หรือไม่
+  const base  = isCan ? split.cancelled : split.active;
+  const list  = filterHistory(base, state.hq);
+  // แถบแจ้งผลยกเลิกใบเบิก (สำเร็จ/ผิดพลาด) — โผล่เหนือตาราง
+  const cmsg = state.cancelMsg
+    ? `<div class="pill ${state.cancelMsg.ok?'badge-ok':'badge-dang'}" style="margin:0 0 12px;white-space:normal;display:flex">${esc(state.cancelMsg.text)}</div>`
+    : '';
   const rows = list.map(r => {
     const tot = reqTotal(r);
     const names = (r.lines||[]).map(l => l.name).join(', ');
@@ -2011,23 +2040,50 @@ function viewHistory(){
       <td>${esc(r.person)}
         <div style="font-size:11.5px;color:var(--tx3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px">${esc(names)}</div></td>
       <td class="num">${tot}</td>
-      <td style="color:var(--tx3);font-size:13px">${(r.lines||[]).length} รายการ</td>
-      <td style="text-align:right"><button class="btn ghost sm" data-act="openSlip" data-id="${esc(r.id)}">เปิดเอกสาร</button></td>
+      <td style="color:var(--tx3);font-size:13px">${(r.lines||[]).length} รายการ${
+        isCan && r.cancelled_at ? `<div style="color:var(--red);font-size:11.5px">ยกเลิก ${esc(fmtD(dayKeyTH(r.cancelled_at)))}</div>` : ''}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="btn ghost sm" data-act="openSlip" data-id="${esc(r.id)}">เปิดเอกสาร</button>
+        ${isCan ? '' : `<button class="btn danger sm" data-act="cancelAsk" data-id="${esc(r.id)}" style="margin-left:6px">✕ ยกเลิกใบนี้</button>`}
+      </td>
     </tr>`;
   }).join('');
 
+  // กล่องยืนยันยกเลิก — วางนอกตาราง (ตารางเลื่อนแนวนอนบนมือถือ ปุ่มยืนยันจะหลุดจอถ้าอยู่ในตาราง)
+  const askReq = isCan ? null : (state.history||[]).find(r => r.id === state.cancelAsk);
+  const ask = askReq ? `<div style="border:1px solid var(--red);border-radius:12px;padding:14px;margin-bottom:12px">
+      <div style="color:var(--red);font-weight:700;margin-bottom:6px">⚠️ ยกเลิกใบเบิก ${esc(askReq.id)} (${reqTotal(askReq)} ชิ้น · ${esc(askReq.person)})</div>
+      <div style="color:var(--tx3);font-size:13px;margin-bottom:10px">ใบนี้จะย้ายไปแท็บ “รายการที่ยกเลิก” · ${
+        askReq.status === 'issued' ? 'สต็อกจะถูกคืนเข้าคลังครบทุกรายการ'
+        : (askReq.status ? 'ใบนี้ยังไม่ได้จ่ายของ สต็อกจึงไม่ถูกคืน (ยังไม่เคยถูกตัด)'
+                         : 'ถ้าใบนี้จ่ายของไปแล้ว สต็อกจะถูกคืนเข้าคลังให้อัตโนมัติ')
+      } · ใส่รหัสผู้ดูแลเพื่อยืนยัน</div>
+      <input class="inp" id="cancelPin" type="password" placeholder="รหัสผู้ดูแล" autocomplete="off" style="margin-bottom:10px">
+      <div style="display:flex;gap:10px">
+        <button class="btn ghost" data-act="cancelNo" ${state.busy?'disabled':''}>ไม่ยกเลิก</button>
+        <button class="btn danger" style="flex:1" data-act="cancelYes" data-id="${esc(askReq.id)}" ${state.busy?'disabled':''}>${state.busy?'กำลังยกเลิก…':'✕ ยืนยันยกเลิกใบเบิก'}</button>
+      </div>
+    </div>` : '';
+
   return `<div class="panel">
+    <div class="filterbar" style="margin-bottom:10px">
+      <button class="btn ${isCan?'ghost':''} sm" data-act="histSub" data-sub="active">ใบเบิกปกติ (${split.active.length})</button>
+      <button class="btn ${isCan?'':'ghost'} sm" data-act="histSub" data-sub="cancelled">รายการที่ยกเลิก (${split.cancelled.length})</button>
+    </div>
+    ${cmsg}${ask}
     <div class="filterbar">
       <input class="inp srch" id="hSearch" placeholder="ค้นหา เลขที่ใบ / แผนก / ชื่อผู้เบิก / ชื่อรายการ" value="${esc(state.hq)}">
       <button class="btn sm" data-act="hsearch">ค้นหา</button>
       ${state.hq ? `<button class="btn ghost sm" data-act="hclear">ล้าง</button>` : ''}
     </div>
     <div style="font-size:13px;color:var(--tx3);margin-bottom:10px">
-      พบ ${list.length} ใบ${state.hq?` จากทั้งหมด ${state.history.length} ใบ`:''}</div>
+      พบ ${list.length} ใบ${state.hq?` จากทั้งหมด ${base.length} ใบ`:''}</div>
     ${list.length ? `<div class="tbwrap"><table class="tb">
       <thead><tr><th>เลขที่</th><th>วันที่</th><th>แผนก</th><th>ผู้เบิก</th><th style="text-align:right">รวม</th><th></th><th></th></tr></thead>
       <tbody>${rows}</tbody></table></div>`
-      : `<div class="empty"><div class="ic">🕘</div>ไม่พบใบเบิกที่ตรงกับคำค้น</div>`}
+      : `<div class="empty"><div class="ic">${isCan?'🚫':'🕘'}</div>${
+          state.hq ? 'ไม่พบใบเบิกที่ตรงกับคำค้น'
+          : (isCan ? 'ยังไม่มีใบเบิกที่ถูกยกเลิก' : 'ยังไม่มีใบเบิก')}</div>`}
   </div>
   ${clearHistoryUI()}
   <button class="btn ghost sm" data-act="reload">↻ ดึงข้อมูลใหม่</button>`;
@@ -2533,6 +2589,39 @@ document.addEventListener('click', async (e) => {
     render();
   }
   else if(act === 'hclear'){ state.hq = ''; render(); }
+
+  // ---- ยกเลิกใบเบิกทีละใบ (รหัสแม่เท่านั้น · ใบที่จ่ายแล้วคืนสต็อกให้) ----
+  else if(act === 'histSub'){
+    state.histSub  = el.dataset.sub === 'cancelled' ? 'cancelled' : 'active';
+    state.cancelAsk = null; state.cancelMsg = null;   // เปลี่ยนแท็บย่อย = ล้างกล่องยืนยันที่ค้างอยู่
+    render();
+  }
+  else if(act === 'cancelAsk'){ state.cancelAsk = el.dataset.id; state.cancelMsg = null; render(); }
+  else if(act === 'cancelNo'){  state.cancelAsk = null; render(); }
+  else if(act === 'cancelYes'){
+    if(state.pinLevel !== 'admin'){ state.cancelMsg = {ok:false, text:'ยกเลิกใบเบิกได้เฉพาะรหัสผู้ดูแล'}; render(); return; }
+    const id  = el.dataset.id;
+    const pin = (($('#cancelPin')||{}).value || '').trim();
+    if(!pin){ state.cancelMsg = {ok:false, text:'กรุณาใส่รหัสผู้ดูแลเพื่อยืนยันการยกเลิก'}; render(); return; }
+    state.busy = true; state.cancelMsg = null; render();
+    try{
+      const res = await cancelRequisition(pin, id);
+      const restored = !!(res && res.restored);
+      state.cancelMsg = {ok:true, text:`✅ ยกเลิกใบเบิก ${id} แล้ว · ${restored?'คืนสต็อกเข้าคลังเรียบร้อย':'ใบนี้ยังไม่ได้จ่ายของ จึงไม่มีสต็อกต้องคืน'} · ดูได้ที่แท็บ “รายการที่ยกเลิก”`};
+      dlog('OK', `ยกเลิกใบเบิก ${id} สำเร็จ (คืนสต็อก: ${restored?'ใช่':'ไม่'})`);
+      state.busy = false; state.cancelAsk = null; state.loading = true; render();
+      await loadDashboard();      // KPI/กราฟ นับจาก requisitions ที่เพิ่งเปลี่ยนสถานะ
+      await loadItems();          // สต็อกคืนแล้ว หน้าเบิก/คลังต้องเห็นยอดใหม่
+      await loadStore();          // ใบที่ยกเลิกต้องหายจากหน้าสโตร์
+      await loadAdminData();      // ประวัติ + movement (มีแถวคืนสต็อกเพิ่ม)
+      state.loading = false;
+    }catch(ex){
+      state.busy = false; state.loading = false;
+      state.cancelMsg = {ok:false, text: ex.message || String(ex)};
+      dlog('ERROR', 'ยกเลิกใบเบิกไม่สำเร็จ: ' + (ex.message||ex), true);
+    }
+    render();
+  }
 
   // ---- ล้างประวัติการเบิก (รหัสแม่เท่านั้น · ดาวน์โหลด CSV สำรองก่อนลบ · ถอยไม่ได้) ----
   else if(act === 'histClearAsk'){ state.histClear = 'ask'; state.histMsg = null; render(); }
@@ -3143,6 +3232,21 @@ test('filterHistory ค้นด้วยชื่อผู้เบิก', () 
 test('filterHistory ค้นด้วยชื่อรายการ', () => assertEq(filterHistory(HIST,'รองเท้า')[0].id, 'REQ-3'));
 test('filterHistory คำค้นว่างคืนทั้งหมด', () => assertEq(filterHistory(HIST,'  ').length, 3));
 test('filterHistory ไม่เจอ', () => assertEq(filterHistory(HIST,'zzz'), []));
+
+// splitHistory — แท็บย่อยหน้าประวัติ (ใบเบิกปกติ / รายการที่ยกเลิก)
+const HIST_C = [
+  {id:'REQ-A', person:'สมชาย', status:'issued',    created_at:'2026-08-01T02:00:00Z', lines:[{item_id:'helmet',name:'หมวกนิรภัย',unit:'ใบ',qty:2}]},
+  {id:'REQ-B', person:'สมหญิง', status:'cancelled', cancelled_at:'2026-08-03T02:00:00Z', created_at:'2026-08-02T02:00:00Z', lines:[{item_id:'boots',name:'รองเท้าเซฟตี้',unit:'คู่',qty:1}]},
+  {id:'REQ-C', person:'ชัย',    status:'pending',   created_at:'2026-08-03T02:00:00Z', lines:[{item_id:'mask',name:'หน้ากาก N95',unit:'ชิ้น',qty:5}]}
+];
+test('splitHistory แยกใบปกติ 2 ใบ', () => assertEq(splitHistory(HIST_C).active.length, 2));
+test('splitHistory แยกใบที่ยกเลิก 1 ใบ', () => assertEq(splitHistory(HIST_C).cancelled.length, 1));
+test('splitHistory ใบที่ยกเลิกคือใบถูกตัว', () => assertEq(splitHistory(HIST_C).cancelled[0].id, 'REQ-B'));
+test('splitHistory ใบ pending ยังอยู่ฝั่งปกติ', () => assertEq(splitHistory(HIST_C).active.some(r => r.id === 'REQ-C'), true));
+test('splitHistory ใบเก่าที่ไม่มี status ถือเป็นใบปกติ', () => assertEq(splitHistory(HIST).active.length, 3));
+test('splitHistory รับ null', () => assertEq(splitHistory(null).active.length, 0));
+test('splitHistory รับลิสต์ว่าง', () => assertEq(splitHistory([]).cancelled, []));
+test('splitHistory ไม่ทำลิสต์เดิมเปลี่ยน', () => { splitHistory(HIST_C); return assertEq(HIST_C.length, 3); });
 
 /* ---------- เฟส 4: ฟอร์มจัดการรายการ PPE ---------- */
 const FITM = [
