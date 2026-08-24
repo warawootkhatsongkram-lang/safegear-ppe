@@ -1962,10 +1962,11 @@ function viewStore(){
     } else {
       const undo = !isAdmin ? '' : (state.storeConfirm === r.id
         ? `<div class="storeundo">
-             <span>ยกเลิกการจ่ายใบนี้? สต็อกจะถูกคืนกลับ</span>
+             <span>ยกเลิกใบเบิกนี้? สต็อกจะถูกคืนเข้าคลัง · ใบจะย้ายไปแท็บ “รายการที่ยกเลิก” ในหน้าประวัติ · ใส่รหัสผู้ดูแลเพื่อยืนยัน</span>
+             <input class="inp" id="storeUndoPin" type="password" placeholder="รหัสผู้ดูแล" autocomplete="off" style="flex:0 1 190px;margin-bottom:0">
              <div style="display:flex;gap:8px;flex:none">
                <button class="btn ghost sm" data-act="storeUndoNo" ${state.busy?'disabled':''}>ไม่</button>
-               <button class="btn danger sm" data-act="storeUndoYes" data-id="${esc(r.id)}" ${state.busy?'disabled':''}>ยืนยันยกเลิก</button>
+               <button class="btn danger sm" data-act="storeUndoYes" data-id="${esc(r.id)}" ${state.busy?'disabled':''}>${state.busy?'กำลังยกเลิก…':'ยืนยันยกเลิก'}</button>
              </div>
            </div>`
         : `<button class="btn ghost sm" data-act="storeUndoAsk" data-id="${esc(r.id)}">↩ ยกเลิกจ่าย</button>`);
@@ -2709,16 +2710,26 @@ document.addEventListener('click', async (e) => {
     }
     render();
   }
-  else if(act === 'storeUndoAsk'){ state.storeConfirm = el.dataset.id; state.storeMsg = null; render(); }
+  else if(act === 'storeUndoAsk'){
+    state.storeConfirm = el.dataset.id; state.storeMsg = null; render();
+    // เด้งไปที่ช่องกรอกรหัส — หลักการเดียวกับหน้าประวัติ (เดย์สั่ง 24 ส.ค. 2569)
+    const pinEl = $('#storeUndoPin');
+    if(pinEl) pinEl.scrollIntoView({ behavior:'smooth', block:'center' });
+  }
   else if(act === 'storeUndoNo'){  state.storeConfirm = null; render(); }
   else if(act === 'storeUndoYes'){
     if(state.pinLevel !== 'admin'){ state.storeMsg = {ok:false, text:'ยกเลิกจ่ายได้เฉพาะรหัสผู้ดูแล'}; render(); return; }
     const id = el.dataset.id;
+    // หลักการเดียวกับหน้าประวัติ: ต้องพิมพ์รหัสแม่ยืนยันซ้ำ แล้วใบกลายเป็น cancelled
+    // (ไม่ใช่กลับไปรอจ่าย) — เดย์สั่ง 24 ส.ค. 2569
+    const pin = (($('#storeUndoPin')||{}).value || '').trim();
+    if(!pin){ state.storeMsg = {ok:false, text:'กรุณาใส่รหัสผู้ดูแลเพื่อยืนยันการยกเลิก'}; render(); return; }
     state.busy = true; state.storeMsg = null; render();
     try{
-      await undoDispenseReq(id);
-      state.storeMsg = {ok:true, text:`↩ ยกเลิกจ่าย ${id} แล้ว · คืนสต็อกเรียบร้อย`};
-      dlog('OK', `ยกเลิกจ่าย ${id} สำเร็จ`);
+      const res = await cancelRequisition(pin, id);
+      const restored = !!(res && res.restored);
+      state.storeMsg = {ok:true, text:`✅ ยกเลิกใบเบิก ${id} แล้ว · ${restored?'คืนสต็อกเข้าคลังเรียบร้อย':'ใบนี้ยังไม่ได้จ่ายของ จึงไม่มีสต็อกต้องคืน'} · ดูได้ที่แท็บ “รายการที่ยกเลิก” ในหน้าประวัติ`};
+      dlog('OK', `ยกเลิกใบเบิก ${id} จากหน้าสโตร์ สำเร็จ (คืนสต็อก: ${restored?'ใช่':'ไม่'})`);
       state.busy = false; state.storeConfirm = null; state.loading = true; render();
       await loadStore();
       await loadItems();
@@ -2728,7 +2739,7 @@ document.addEventListener('click', async (e) => {
     }catch(ex){
       state.busy = false; state.loading = false; state.storeConfirm = null;
       state.storeMsg = {ok:false, text: ex.message || String(ex)};
-      dlog('ERROR', 'ยกเลิกจ่ายไม่สำเร็จ: ' + (ex.message||ex), true);
+      dlog('ERROR', 'ยกเลิกใบเบิกจากหน้าสโตร์ไม่สำเร็จ: ' + (ex.message||ex), true);
     }
     render();
   }
