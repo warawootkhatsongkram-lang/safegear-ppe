@@ -2596,7 +2596,13 @@ document.addEventListener('click', async (e) => {
     state.cancelAsk = null; state.cancelMsg = null;   // เปลี่ยนแท็บย่อย = ล้างกล่องยืนยันที่ค้างอยู่
     render();
   }
-  else if(act === 'cancelAsk'){ state.cancelAsk = el.dataset.id; state.cancelMsg = null; render(); }
+  else if(act === 'cancelAsk'){
+    state.cancelAsk = el.dataset.id; state.cancelMsg = null; render();
+    // เด้งไปที่ช่องกรอกรหัส — กล่องยืนยันอยู่เหนือตาราง กดปุ่มของใบที่อยู่กลาง/ท้ายตาราง
+    // แล้วกล่องจะโผล่นอกจอ ดูเหมือน "กดแล้วไม่มีอะไรเกิดขึ้น" (เดย์สั่ง 24 ส.ค. 2569)
+    const pinEl = $('#cancelPin');
+    if(pinEl) pinEl.scrollIntoView({ behavior:'smooth', block:'center' });
+  }
   else if(act === 'cancelNo'){  state.cancelAsk = null; render(); }
   else if(act === 'cancelYes'){
     if(state.pinLevel !== 'admin'){ state.cancelMsg = {ok:false, text:'ยกเลิกใบเบิกได้เฉพาะรหัสผู้ดูแล'}; render(); return; }
