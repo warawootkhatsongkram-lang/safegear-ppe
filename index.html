@@ -336,6 +336,38 @@ table.tb td.num{text-align:right;font-weight:700;color:var(--y);font-variant-num
 .trackrow .reqid{font-weight:700;color:var(--y);font-size:14px}
 .trackrow .sub{flex:1;min-width:0;color:var(--tx2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
+/* ---------- A20: รับเข้า — กล่องปรับยอด (วันที่/รูป) + แท็บแดชบอร์ดรับเข้า ---------- */
+/* กล่องปรับยอดมีช่องเพิ่ม -> จอเตี้ยต้องเลื่อนดูได้ · margin:auto = จอสูงพอยังอยู่กลางจอเหมือนเดิม */
+#overlay{align-items:flex-start;overflow-y:auto}
+#overlay .modal{margin:auto}
+.fldhint{font-size:11.5px;color:var(--tx3);margin:-9px 0 14px}
+.fldreq{color:var(--y)}
+/* ช่องเลือกไฟล์ซ่อนไว้ ใช้ปุ่ม label แทน (ปุ่ม 44px กดง่าย · มือถือเปิดกล้อง/คลังรูปให้เลือกเอง) */
+.filehide{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.photobox{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--bg2);border:1.5px dashed var(--line2);border-radius:11px;padding:10px 12px}
+.photobox img{width:72px;height:72px;border-radius:9px;object-fit:cover;border:1px solid var(--line2);flex:none}
+.photobox .inf{flex:1;min-width:120px;font-size:12.5px;color:var(--tx2);line-height:1.5}
+.photoview img{width:100%;height:auto;border-radius:10px;display:block;background:#fff}
+.rcvfilt{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:8px 0 14px}
+.rcvfilt label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--tx2)}
+.rcvfilt .sel{width:100%}
+.rcvacts{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+/* กราฟแท่งแนวตั้งวาดเป็น HTML ไม่ใช้ canvas (บทเรียน A12.4 เรื่อง Safari) · แท่งเยอะ = เลื่อนแนวนอนในกล่อง */
+.rcvcols{display:flex;align-items:flex-end;gap:6px;height:230px;overflow-x:auto;padding:4px 2px 0;-webkit-overflow-scrolling:touch}
+.rcvcol{flex:1 0 30px;min-width:30px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
+.rcvcol .v{font-size:10.5px;font-weight:700;color:var(--y);font-variant-numeric:tabular-nums;margin-bottom:3px;white-space:nowrap}
+.rcvcol .b{width:100%;max-width:46px;background:var(--y);border-radius:5px 5px 0 0}
+.rcvcol .b.zero{background:var(--line)}
+.rcvcol .x{font-size:10.5px;color:var(--tx3);margin-top:5px;white-space:nowrap;line-height:16px;height:16px}
+.rcvbars{display:flex;flex-direction:column;gap:13px}
+.rcvbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 10px;align-items:baseline}
+.rcvbar .nm{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rcvbar .amt{font-weight:800;color:var(--y);font-variant-numeric:tabular-nums;white-space:nowrap}
+.rcvbar .amt i{font-style:normal;font-weight:400;font-size:11.5px;color:var(--tx3);margin-left:4px}
+.rcvbar .trk{grid-column:1/-1;height:8px;background:var(--bg2);border-radius:99px;overflow:hidden}
+.rcvbar .trk span{display:block;height:100%;background:var(--y);border-radius:99px}
+.rcvbar .sub{grid-column:1/-1;font-size:11.5px;color:var(--tx3)}
+
 /* ---------- มือถือ ---------- */
 @media(max-width:860px){
   #side{display:none}
@@ -517,6 +549,7 @@ const TABS = {
   store:   ['สโตร์–จ่ายของ','รับใบเบิกและบันทึกผู้จ่าย','🏬','issue'],
   dash:    ['แดชบอร์ด','สรุปยอดเบิกและกราฟ','📊','open'],
   stock:   ['คลัง PPE','สต็อก วันหมดอายุ รอบเปลี่ยน','📦','admin'],
+  receive: ['รับเข้า PPE','สรุปการรับของเข้าคลัง ตามวันที่ รายการ และจำนวน','📥','admin'],   // A20 (เดย์สั่ง 15 ก.ย. 2569)
   history: ['ประวัติการเบิก','ย้อนดูและพิมพ์เอกสารซ้ำ','🕘','admin']
 };
 // ผู้ถือรหัสระดับ level เข้าแท็บที่ต้องการ need ได้ไหม
@@ -561,7 +594,14 @@ const state = {
   // A16/A17: เดือนของกราฟ 5 (แยกประเภท) และกราฟ 6 (แยกชื่อ PPE) — ตั้งต้น 'ทุกเดือน' ตามที่เดย์สั่ง
   // เขียน 'all' ตรงๆ ไม่ใช้ MONTH_ALL เพราะ const นั้นประกาศทีหลังในไฟล์ (ตอนนี้ยังอ่านไม่ได้)
   catMonth:'all',
-  itemMonth:'all'
+  itemMonth:'all',
+  // ---- A20: แท็บรับเข้า (รหัสแม่) ----
+  receipts:[],               // รายการรับของเข้า (admin_get_receipts) [{id,item_id,name,unit,qty,day,actor,note,photo_path,created_at}]
+  rcvErr:null,               // ข้อความถ้าโหลดข้อมูลรับเข้าไม่สำเร็จ (เช่น ยังไม่ได้รัน SQL ชุด A20)
+  rcvYear:'all', rcvMonth:'all', rcvItem:'all',   // ตัวกรองแท็บรับเข้า · 'all' = ทั้งหมด · เดือนเก็บเป็น '01'..'12'
+  rcvPage:1,                 // หน้าของตารางรายการรับเข้า
+  photoView:null,            // { path, name, day, qty, unit, actor } = รูปที่กำลังเปิดดู
+  lastRecorder:''            // ชื่อผู้บันทึกล่าสุด (จำในหน่วยความจำเท่านั้น) เปิดกล่องครั้งถัดไปไม่ต้องพิมพ์ใหม่
 };
 // รหัสเก็บในหน่วยความจำเท่านั้น รีเฟรช = ลืม (ไม่เขียนลง localStorage เด็ดขาด)
 // ต้องเก็บตัวรหัสไว้เพราะ RPC ทุกตัวต้องส่งรหัสไปให้ Postgres ตรวจซ้ำทุกครั้ง
@@ -710,6 +750,137 @@ function validateItem(f, items, isNew){
     if(g(k) && !/^\d{4}-(0[1-9]|1[0-2])$/.test(g(k))) return `${lbl} ต้องเป็นรูปแบบ ปีค.ศ.-เดือน เช่น 2027-06`;
   }
   return null;
+}
+
+/* ---------- A20: รับเข้า — กล่องปรับยอด + แท็บแดชบอร์ดรับเข้า (pure ทั้งหมด ทดสอบด้วย ?test=1) ---------- */
+const RECEIPT_BUCKET  = 'receive-photos';  // ชื่อ Storage bucket ต้องตรงกับ ▶ schema.sql ข้อ 5.4
+const PHOTO_MAX_SIDE  = 1600;              // ด้านยาวสุดของรูปหลังบีบ (px) — ยังอ่านตัวเลขบนใบส่งของได้ชัด
+const PHOTO_TARGET_KB = 400;               // ลดคุณภาพ JPEG ทีละขั้นจนไม่เกินนี้ (Storage รับสูงสุด 1MB)
+const RCV_PER_PAGE    = 20;                // ตารางรายการรับเข้า แสดงกี่แถวต่อหน้า
+
+// ย่อขนาดรูปให้ด้านยาวไม่เกิน max โดยคงสัดส่วน — รูปเล็กอยู่แล้วไม่ขยาย · ขนาดผิดรูปแบบคืน 0
+function fitDims(w, h, max){
+  const W = Math.max(0, Number(w) || 0), H = Math.max(0, Number(h) || 0);
+  const M = Math.max(1, Number(max) || PHOTO_MAX_SIDE);
+  if(!W || !H) return { w:0, h:0 };
+  const k = Math.min(1, M / Math.max(W, H));
+  return { w: Math.max(1, Math.round(W * k)), h: Math.max(1, Math.round(H * k)) };
+}
+// ขนาดไฟล์อ่านง่าย: ต่ำกว่า 1MB เป็น KB
+function fmtBytes(n){
+  const b = Math.max(0, Number(n) || 0);
+  return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.round(b / 1024) + ' KB';
+}
+// ตรวจกล่องปรับยอดก่อนส่ง — คืนข้อความไทย หรือ null ถ้าผ่าน
+//   a = state.adjust · item = รายการ PPE (stock/unit) · today = 'YYYY-MM-DD' ตามนาฬิกาเครื่องนี้
+//   วันที่ว่าง = ผ่าน (ตอนบันทึกใช้วันของเครื่องแทน ตามที่เดย์สั่ง)
+function validateAdjust(a, item, today){
+  if(!a) return 'ไม่พบข้อมูลที่จะบันทึก';
+  const q = Number(a.qty);
+  if(!q || q <= 0 || !Number.isInteger(q)) return 'กรุณากรอกจำนวนเป็นจำนวนเต็มมากกว่า 0';
+  if(!String(a.recorder == null ? '' : a.recorder).trim()) return 'กรุณาพิมพ์ชื่อผู้บันทึก';
+  if(a.mode === 'receive' && a.date){
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(String(a.date))) return 'วันที่รับเข้าไม่ถูกต้อง';
+    if(today && String(a.date) > String(today)) return 'วันที่รับเข้าต้องไม่เกินวันนี้';
+  }
+  const delta = a.mode === 'adjust-' ? -q : q;
+  if(item && (Number(item.stock) || 0) + delta < 0) return `ปรับแล้วสต็อกติดลบ (คงเหลือ ${item.stock} ${item.unit})`;
+  return null;
+}
+// path รูปใน bucket: <ตั๋ว uuid>/<รหัสรายการ>-<เวลา>.jpg — รูปแบบต้องตรงกับที่ admin_adjust_stock ตรวจ
+function receiptPhotoPath(token, itemId, ts){
+  const t = String(token || '').toLowerCase();
+  if(!/^[0-9a-f-]{36}$/.test(t)) return null;
+  const id = String(itemId || '').replace(/[^A-Za-z0-9_-]/g, '') || 'item';
+  return `${t}/${id}-${Math.floor(Number(ts) || 0)}.jpg`;
+}
+// วันที่รับของของแถวรับเข้า: day จาก DB > received_on > วันไทยของ created_at (แถวเก่า)
+function rcvDay(r){
+  if(!r) return '';
+  return String(r.day || r.received_on || dayKeyTH(r.created_at) || '').slice(0,10);
+}
+// ปีที่มีข้อมูลรับเข้า (ใหม่ -> เก่า)
+function rcvYears(list){
+  const s = new Set();
+  (list||[]).forEach(r => { const y = rcvDay(r).slice(0,4); if(/^\d{4}$/.test(y)) s.add(y); });
+  return [...s].sort().reverse();
+}
+// รายการ PPE ที่มีในข้อมูลรับเข้า สำหรับตัวกรอง (ไม่ซ้ำ เรียงตามชื่อ)
+function rcvItemOptions(list){
+  const map = {};
+  (list||[]).forEach(r => { if(r && r.item_id && !map[r.item_id]) map[r.item_id] = { id:r.item_id, name:r.name || r.item_id }; });
+  return Object.values(map).sort((a,b) => String(a.name).localeCompare(String(b.name), 'th'));
+}
+// กรองรายการรับเข้า — f = { year:'2026'|'all', month:'09'|'all', item:'glove-01'|'all' }
+//   เลือกเดือนแต่ไม่เลือกปี = เดือนนั้นของทุกปี
+function filterReceipts(list, f){
+  const g = f || {};
+  const y = g.year || 'all', m = g.month || 'all', it = g.item || 'all';
+  return (list||[]).filter(r => {
+    const d = rcvDay(r);
+    if(y !== 'all' && d.slice(0,4) !== y) return false;
+    if(m !== 'all' && d.slice(5,7) !== m) return false;
+    if(it !== 'all' && r.item_id !== it) return false;
+    return true;
+  });
+}
+// ตัวเลขหัวแท็บ — จำนวนรวม / กี่ครั้ง / กี่รายการ / กี่วัน / รับล่าสุดวันไหน
+function receiptSummary(list){
+  const items = new Set(), days = new Set();
+  let qty = 0, last = '';
+  (list||[]).forEach(r => {
+    qty += Number(r.qty) || 0;
+    items.add(r.item_id);
+    const d = rcvDay(r);
+    if(d){ days.add(d); if(d > last) last = d; }
+  });
+  return { qty, count:(list||[]).length, items:items.size, days:days.size, last };
+}
+// ยอดรับแยกตามรายการ (มาก -> น้อย · เท่ากันเรียงชื่อ) พร้อมจำนวนครั้งและวันที่รับล่าสุด
+function receiptsByItem(list){
+  const map = {};
+  (list||[]).forEach(r => {
+    const k = r.item_id || '';
+    const o = map[k] || (map[k] = { id:k, name:r.name || k, unit:r.unit || '', qty:0, count:0, last:'' });
+    o.qty += Number(r.qty) || 0; o.count++;
+    const d = rcvDay(r); if(d > o.last) o.last = d;
+  });
+  return Object.values(map).sort((a,b) => b.qty - a.qty || String(a.name).localeCompare(String(b.name), 'th'));
+}
+// ข้อมูลกราฟแท่ง: เลือกทั้งปีและเดือน = รายวันของเดือนนั้น (วันที่ไม่มีรับ = 0)
+//   นอกนั้น = รายเดือน · เลือกปีเดียวโชว์ ม.ค.-ธ.ค. ครบ · ไม่เลือกปีเติมเดือนที่ขาดระหว่างเดือนแรก-ล่าสุด
+function receiptSeries(list, f){
+  const g = f || {}, arr = list || [];
+  if(g.year && g.year !== 'all' && g.month && g.month !== 'all'){
+    const ym = g.year + '-' + g.month, n = daysInMonth(ym), sum = {};
+    arr.forEach(r => { const d = rcvDay(r); if(d.slice(0,7) === ym) sum[d] = (sum[d] || 0) + (Number(r.qty) || 0); });
+    const rows = [];
+    for(let i = 1; i <= n; i++){ const k = ym + '-' + String(i).padStart(2,'0'); rows.push({ k, qty: sum[k] || 0 }); }
+    return { mode:'day', rows };
+  }
+  const sum = {};
+  arr.forEach(r => { const m = rcvDay(r).slice(0,7); if(/^\d{4}-\d{2}$/.test(m)) sum[m] = (sum[m] || 0) + (Number(r.qty) || 0); });
+  const keys = Object.keys(sum).sort();
+  if(!keys.length) return { mode:'month', rows:[] };
+  let from = keys[0], to = keys[keys.length - 1];
+  if(g.year && g.year !== 'all'){ from = g.year + '-01'; to = g.year + '-12'; }
+  let [y, m] = from.split('-').map(Number);
+  const [ty, tm] = to.split('-').map(Number);
+  const rows = [];
+  for(let guard = 0; (y < ty || (y === ty && m <= tm)) && guard < 240; guard++){
+    const k = y + '-' + String(m).padStart(2,'0');
+    rows.push({ k, qty: sum[k] || 0 });
+    m++; if(m > 12){ m = 1; y++; }
+  }
+  return { mode:'month', rows };
+}
+// รายการรับเข้าเป็น CSV (มี BOM ให้ Excel อ่านภาษาไทยถูก)
+function receiptsToCSV(list){
+  const q = v => '"' + String(v==null?'':v).replace(/"/g,'""') + '"';
+  const head = ['วันที่รับเข้า','รหัสรายการ','รายการ','จำนวน','หน่วย','ผู้บันทึก','หมายเหตุ','มีรูป','บันทึกเมื่อ'];
+  const rows = (list||[]).map(r => [rcvDay(r), r.item_id||'', r.name||'', Number(r.qty)||0, r.unit||'',
+    r.actor||'', r.note||'', r.photo_path ? 'มี' : '', fmtDT(r.created_at)].map(q).join(','));
+  return '\uFEFF' + [head.map(q).join(','), ...rows].join('\r\n');
 }
 
 /* ---------- เฟส 2: สรุปยอด (pure ทั้งหมด ทดสอบด้วย ?test=1) ---------- */
@@ -1018,11 +1189,14 @@ async function loadMovements(){
   state.moves = data || [];
   dlog('LOAD', `โหลด movement ${state.moves.length} รายการ`);
 }
-async function adjustStock(itemId, delta, reason, note){
+// A20: extra = { actor: ชื่อผู้บันทึก, receivedOn: 'YYYY-MM-DD' | null, photoPath: path รูปใน Storage | null }
+async function adjustStock(itemId, delta, reason, note, extra){
+  const x = extra || {};
   dlog('ADJUST', `${itemId} ${delta>0?'+':''}${delta} (${reason})`);
   const { data, error } = await sb.rpc('admin_adjust_stock', {
     p_pin: userPin, p_item_id: itemId, p_delta: delta,
-    p_reason: reason, p_note: note || null, p_actor: 'ADMIN'
+    p_reason: reason, p_note: note || null, p_actor: String(x.actor || '').trim() || 'ADMIN',
+    p_received_on: x.receivedOn || null, p_photo_path: x.photoPath || null
   });
   if(error) throw error;
   return data;
@@ -1055,7 +1229,64 @@ async function loadAdminData(){
   if(state.pinLevel !== 'admin') return;
   await loadHistory();
   await loadMovements();
+  await loadReceipts();      // A20: แท็บรับเข้า
   state.p2loaded = true;
+}
+// A20: ข้อมูลแท็บรับเข้า — โหลดไม่สำเร็จ (เช่น ยังไม่ได้รัน SQL ชุด A20) ให้แจ้งในแท็บรับเข้าแทน
+//   ไม่ throw ต่อ เพื่อไม่ให้หน้าคลัง/ประวัติที่โหลดมาพร้อมกันพังตามไปด้วย (error ยังขึ้น DEBUG PANEL + console)
+async function loadReceipts(){
+  const { data, error } = await sb.rpc('admin_get_receipts', { p_pin: userPin });
+  if(error){
+    state.receipts = []; state.rcvErr = error.message || String(error);
+    dlog('ERROR', 'โหลดข้อมูลรับเข้าไม่สำเร็จ: ' + state.rcvErr, true);
+    return;
+  }
+  state.receipts = data || []; state.rcvErr = null;
+  dlog('LOAD', `โหลดรายการรับเข้า ${state.receipts.length} รายการ`);
+}
+// A20: บีบรูปในเครื่องก่อนส่ง — ย่อด้านยาวเหลือ PHOTO_MAX_SIDE แล้วลดคุณภาพ JPEG ทีละขั้นจนไม่เกิน PHOTO_TARGET_KB
+//   ถอดรูปด้วย <img> = เบราว์เซอร์หมุนรูปตาม EXIF ให้เอง (รูปมือถือแนวตั้งไม่ตะแคง)
+function compressPhoto(file){
+  return new Promise((resolve, reject) => {
+    if(!file) return reject(new Error('ไม่พบไฟล์รูป'));
+    if(file.type && !/^image\//.test(file.type)) return reject(new Error('ไฟล์นี้ไม่ใช่รูปภาพ'));
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('เปิดรูปนี้ไม่ได้ ลองถ่ายใหม่ หรือเลือกไฟล์ JPG/PNG')); };
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const { w, h } = fitDims(img.naturalWidth, img.naturalHeight, PHOTO_MAX_SIDE);
+      if(!w || !h) return reject(new Error('อ่านขนาดรูปไม่ได้'));
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);   // PNG พื้นใส -> พื้นขาว (ไม่งั้นกลายเป็นดำ)
+      ctx.drawImage(img, 0, 0, w, h);
+      const tryQ = (q) => cv.toBlob(b => {
+        if(!b) return reject(new Error('บีบรูปไม่สำเร็จ'));
+        if(b.size > PHOTO_TARGET_KB * 1024 && q > 0.5) return tryQ(Math.round((q - 0.08) * 100) / 100);
+        if(b.size > 1048576) return reject(new Error('รูปยังใหญ่เกิน 1MB หลังบีบ กรุณาถ่ายใหม่'));
+        resolve({ blob:b, w, h, q, size:b.size, orig:file.size || 0 });
+      }, 'image/jpeg', q);
+      tryQ(0.82);
+    };
+    img.src = url;
+  });
+}
+// A20: ขอตั๋วอัปโหลดด้วยรหัสแม่ -> อัปโหลดรูปเข้าโฟลเดอร์ของตั๋ว -> คืน path ไว้ส่งให้ admin_adjust_stock
+async function uploadReceiptPhoto(blob, itemId){
+  const { data: token, error } = await sb.rpc('admin_receipt_upload_token', { p_pin: userPin });
+  if(error) throw error;
+  const path = receiptPhotoPath(token, itemId, Date.now());
+  if(!path) throw new Error('ขอสิทธิ์อัปโหลดรูปไม่สำเร็จ');
+  dlog('PHOTO', `อัปโหลด ${path} (${fmtBytes(blob.size)})`);
+  const up = await sb.storage.from(RECEIPT_BUCKET).upload(path, blob, { contentType:'image/jpeg', upsert:false });
+  if(up.error) throw new Error('อัปโหลดรูปไม่สำเร็จ: ' + (up.error.message || up.error));
+  return path;
+}
+function receiptPhotoUrl(path){
+  if(!path || !sb) return '';
+  return sb.storage.from(RECEIPT_BUCKET).getPublicUrl(path).data.publicUrl;
 }
 
 /* ============================================================
@@ -1102,6 +1333,7 @@ function render(){
   else if(state.tab === 'store')   html += viewStore();
   else if(state.tab === 'dash')    html += viewDash();
   else if(state.tab === 'stock')   html += viewStock();
+  else if(state.tab === 'receive') html += viewReceive();   // A20
   else if(state.tab === 'history') html += viewHistory();
   v.innerHTML = html;
 
@@ -1878,6 +2110,131 @@ function viewStock(){
   <button class="btn ghost sm" data-act="reload">↻ ดึงข้อมูลใหม่</button>`;
 }
 
+/* ---------- A20: แท็บรับเข้า — แดชบอร์ดเฉพาะการรับของเข้าคลัง (รหัสแม่) ---------- */
+function viewReceive(){
+  const all  = state.receipts || [];
+  const f    = { year: state.rcvYear || 'all', month: state.rcvMonth || 'all', item: state.rcvItem || 'all' };
+  const list = filterReceipts(all, f);
+  const sum  = receiptSummary(list);
+  const byItem = receiptsByItem(list);
+  const ser  = receiptSeries(list, f);
+  const opts = rcvItemOptions(all);
+  const filtered = f.year !== 'all' || f.month !== 'all' || f.item !== 'all';
+  const n = v => (Number(v) || 0).toLocaleString('en-US');
+
+  // ช่วงที่กำลังดู เขียนเป็นคำ เช่น "ก.ย. 2026 · ถุงมือผ้า (สีขาว)"
+  const period = f.month !== 'all'
+    ? TH_M[Number(f.month) - 1] + (f.year !== 'all' ? ' ' + f.year : ' ของทุกปี')
+    : (f.year !== 'all' ? 'ปี ' + f.year : 'ทั้งหมดตั้งแต่เริ่มระบบ');
+  const pick = f.item !== 'all' ? opts.find(o => o.id === f.item) : null;
+  const scope = period + (pick ? ' · ' + pick.name : '');
+
+  const err = state.rcvErr ? `<div class="card danger" style="margin-bottom:16px">
+      <div class="eyebrow" style="color:#ff6b6b">โหลดข้อมูลรับเข้าไม่สำเร็จ</div>
+      <div style="margin-top:6px;font-size:14px">${esc(state.rcvErr)}</div>
+      <div style="margin-top:6px;font-size:12.5px;color:var(--tx3)">ถ้าเพิ่งอัปเดตระบบ ต้องรัน SQL ชุด A20 ใน Supabase ก่อน</div></div>` : '';
+
+  const yOpt = [`<option value="all" ${f.year==='all'?'selected':''}>ทุกปี</option>`]
+    .concat(rcvYears(all).map(y => `<option value="${esc(y)}" ${f.year===y?'selected':''}>${esc(y)}</option>`)).join('');
+  const mOpt = [`<option value="all" ${f.month==='all'?'selected':''}>ทุกเดือน</option>`]
+    .concat(TH_M.map((t,i) => { const v = String(i+1).padStart(2,'0'); return `<option value="${v}" ${f.month===v?'selected':''}>${t}</option>`; })).join('');
+  const iOpt = [`<option value="all" ${f.item==='all'?'selected':''}>ทุกรายการ</option>`]
+    .concat(opts.map(o => `<option value="${esc(o.id)}" ${f.item===o.id?'selected':''}>${esc(o.name)}</option>`)).join('');
+
+  const filters = `<div class="panel">
+    <div class="eyebrow">ตัวกรอง</div>
+    <div class="rcvfilt">
+      <label>ปี<select class="sel" id="rcvYear">${yOpt}</select></label>
+      <label>เดือน<select class="sel" id="rcvMonth">${mOpt}</select></label>
+      <label>รายการ PPE<select class="sel" id="rcvItem">${iOpt}</select></label>
+    </div>
+    <div class="rcvacts">
+      ${filtered ? `<button class="btn ghost sm" data-act="rcvClear">✕ ล้างตัวกรอง</button>` : ''}
+      <button class="btn ghost sm" data-act="rcvCSV" ${list.length?'':'disabled'}>⬇ ดาวน์โหลด CSV (${list.length} แถว)</button>
+      <button class="btn ghost sm" data-act="tab" data-tab="stock">＋ บันทึกรับของ (หน้าคลัง PPE)</button>
+    </div>
+  </div>`;
+
+  if(!all.length){
+    return `${err}${filters}<div class="panel"><div class="empty"><div class="ic">📥</div>ยังไม่มีการรับของเข้า<br>
+      <span style="font-size:13px">ไปหน้าคลัง PPE → กด “ปรับยอด” ของรายการนั้น → เลือก “รับของเข้า (+)”</span></div></div>
+      <button class="btn ghost sm" data-act="reload">↻ ดึงข้อมูลใหม่</button>`;
+  }
+  if(!list.length){
+    return `${err}${filters}<div class="panel"><div class="empty"><div class="ic">🔎</div>ไม่มีการรับเข้าในช่วงที่เลือก<br>
+      <span style="font-size:13px">${esc(scope)}</span></div></div>
+      <button class="btn ghost sm" data-act="reload">↻ ดึงข้อมูลใหม่</button>`;
+  }
+
+  // กราฟแท่งแนวตั้ง (HTML) — แท่งสูงสุด 78% ของกล่อง เหลือที่ให้ตัวเลขด้านบนและป้ายด้านล่าง
+  const maxQ = Math.max(1, ...ser.rows.map(r => r.qty));
+  const cols = ser.rows.map(r => {
+    const h = r.qty ? Math.max(2, Math.round(r.qty / maxQ * 78)) : 1;
+    const x = ser.mode === 'day' ? String(Number(r.k.slice(8,10)))
+      : TH_M[Number(r.k.slice(5,7)) - 1] + (f.year === 'all' ? ' ' + r.k.slice(2,4) : '');
+    const tip = (ser.mode === 'day' ? fmtD(r.k) : fmtM(r.k)) + ' · รับเข้า ' + n(r.qty);
+    return `<div class="rcvcol" title="${esc(tip)}">
+      <span class="v">${r.qty ? n(r.qty) : ''}</span>
+      <span class="b ${r.qty?'':'zero'}" style="height:${h}%"></span>
+      <span class="x">${esc(x)}</span></div>`;
+  }).join('');
+
+  const maxI = Math.max(1, ...byItem.map(r => r.qty));
+  const bars = byItem.map(r => `<div class="rcvbar">
+      <span class="nm">${esc(r.name)}</span>
+      <span class="amt">${n(r.qty)}<i>${esc(r.unit)}</i></span>
+      <span class="trk"><span style="width:${Math.max(2, Math.round(r.qty / maxI * 100))}%"></span></span>
+      <span class="sub">รับ ${r.count} ครั้ง · ล่าสุด ${esc(fmtD(r.last))}</span></div>`).join('');
+
+  const pg = pageSlice(list, state.rcvPage, RCV_PER_PAGE);
+  const rows = pg.rows.map(r => `<tr>
+      <td style="white-space:nowrap">${esc(fmtD(rcvDay(r)))}</td>
+      <td style="min-width:160px">${esc(r.name)}</td>
+      <td class="num" style="white-space:nowrap">${n(r.qty)} <span style="font-size:11px;color:var(--tx3);font-weight:400">${esc(r.unit)}</span></td>
+      <td style="white-space:nowrap">${r.actor && r.actor !== 'ADMIN' ? esc(r.actor) : '<span style="color:var(--tx3)">—</span>'}</td>
+      <td style="color:var(--tx2);font-size:13px;min-width:140px">${r.note ? esc(r.note) : '<span style="color:var(--tx3)">—</span>'}</td>
+      <td style="text-align:right;white-space:nowrap">${r.photo_path
+        ? `<button class="btn ghost sm" data-act="rcvPhoto" data-id="${esc(r.id)}">📷 ดูรูป</button>`
+        : '<span style="color:var(--tx3);font-size:12px">ไม่มีรูป</span>'}</td>
+    </tr>`).join('');
+  const pager = pg.pages > 1 ? `<div class="pager">
+      <button class="btn ghost sm" data-act="rcvPage" data-p="${pg.page - 1}" ${pg.page <= 1 ? 'disabled' : ''}>← ก่อนหน้า</button>
+      <span class="pginfo">แถวที่ ${pg.from}–${pg.to} จาก ${pg.total} · หน้า ${pg.page}/${pg.pages}</span>
+      <button class="btn ghost sm" data-act="rcvPage" data-p="${pg.page + 1}" ${pg.page >= pg.pages ? 'disabled' : ''}>ถัดไป →</button>
+    </div>` : '';
+
+  return `${err}${filters}
+  <div class="kpis">
+    <div class="kpi"><div class="eyebrow">รับเข้ารวม</div><div class="bignum">${n(sum.qty)}</div>
+      <div class="cap">${pick ? esc((byItem[0] && byItem[0].unit) || '') : 'ทุกหน่วยรวมกัน (ชิ้น/คู่/ใบ…)'}</div></div>
+    <div class="kpi plain"><div class="eyebrow">จำนวนครั้งที่รับ</div><div class="bignum">${n(sum.count)}</div>
+      <div class="cap">ใน ${sum.days} วัน</div></div>
+    <div class="kpi plain"><div class="eyebrow">รายการ PPE</div><div class="bignum">${n(sum.items)}</div>
+      <div class="cap">รายการที่มีการรับ</div></div>
+    <div class="kpi plain"><div class="eyebrow">รับล่าสุด</div><div class="bignum" style="font-size:21px;line-height:1.3">${esc(fmtD(sum.last))}</div>
+      <div class="cap">${esc(scope)}</div></div>
+  </div>
+  <div class="panel">
+    <div class="eyebrow">ยอดรับเข้า${ser.mode === 'day' ? 'รายวัน' : 'รายเดือน'}</div>
+    <h3>${esc(scope)}</h3>
+    <div class="rcvcols">${cols}</div>
+  </div>
+  <div class="panel">
+    <div class="eyebrow">แยกตามรายการ PPE</div>
+    <h3>รับเข้า ${byItem.length} รายการ</h3>
+    <div class="rcvbars">${bars}</div>
+  </div>
+  <div class="panel">
+    <div class="eyebrow">รายการรับเข้า (ใหม่ → เก่า)</div>
+    <h3>${n(list.length)} ครั้ง</h3>
+    <div class="tbwrap"><table class="tb">
+      <thead><tr><th>วันที่รับ</th><th>รายการ</th><th style="text-align:right">จำนวน</th><th>ผู้บันทึก</th><th>หมายเหตุ</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    ${pager}
+  </div>
+  <button class="btn ghost sm" data-act="reload">↻ ดึงข้อมูลใหม่</button>`;
+}
+
 /* ---------- แท็บสโตร์: จ่ายของ + บันทึกผู้จ่าย ---------- */
 // วันที่+เวลาแบบไทย (เลื่อน +7 ชม.เหมือน dayKeyTH แล้วอ่านเวลาผนัง)
 function fmtDT(ts){
@@ -2121,13 +2478,34 @@ function clearHistoryUI(){
 /* ---------- modal ปรับยอด / รับของเข้า ---------- */
 function renderModal(){
   const ov = $('#overlay');
-  if(!state.adjust && !state.edit){ ov.classList.remove('show'); $('#modalBox').innerHTML = ''; return; }
+  if(!state.adjust && !state.edit && !state.photoView){ ov.classList.remove('show'); $('#modalBox').innerHTML = ''; return; }
   if(state.edit){ modalEditItem(ov); return; }        // เฟส 4: modal จัดการรายการ PPE
+  if(state.photoView){ modalPhoto(ov); return; }     // A20: เปิดดูรูปตอนรับของ
   const a  = state.adjust;
   const it = state.items.find(i => i.id === a.itemId);
   if(!it){ state.adjust = null; ov.classList.remove('show'); return; }
 
   const opt = (v,t) => `<option value="${v}" ${a.mode===v?'selected':''}>${t}</option>`;
+  // A20: วันที่รับ + รูป โผล่เฉพาะ "รับของเข้า" · ผู้บันทึก (บังคับ) + หมายเหตุ ใช้ทุกประเภท
+  const isRcv = a.mode === 'receive';
+  const today = todayISO();
+  const photoField = !isRcv ? '' : `<div style="margin-bottom:16px">
+      <span style="display:block;font-size:13px;color:var(--tx2);margin-bottom:7px;font-weight:500">รูปถ่าย (ถ้ามี)</span>
+      <input class="filehide" id="adjPhoto" type="file" accept="image/*" tabindex="-1">
+      ${a.photoBusy
+        ? `<div class="photobox"><div class="spin" style="width:24px;height:24px;margin:0"></div><div class="inf">กำลังบีบรูปให้เล็กลง…</div></div>`
+        : a.photo
+        ? `<div class="photobox">
+             <img src="${esc(a.photoUrl)}" alt="รูปที่แนบ">
+             <div class="inf">${a.photo.w}×${a.photo.h} px · <b style="color:var(--y)">${fmtBytes(a.photo.size)}</b><br>
+               <span style="color:var(--tx3)">บีบจากเดิม ${fmtBytes(a.photo.orig)}</span></div>
+             <div style="display:flex;gap:8px;flex-wrap:wrap">
+               <label class="btn ghost sm" for="adjPhoto" style="cursor:pointer">เปลี่ยนรูป</label>
+               <button class="btn ghost sm" data-act="adjPhotoDel" ${state.busy?'disabled':''}>ลบรูป</button>
+             </div></div>`
+        : `<label class="btn ghost sm" for="adjPhoto" style="width:100%;cursor:pointer">📷 ถ่ายรูป / เลือกรูป</label>
+           <div class="fldhint" style="margin:7px 0 0">ระบบบีบรูปให้เล็กลงก่อนส่ง แต่ยังอ่านตัวหนังสือบนใบส่งของได้</div>`}
+    </div>`;
   $('#modalBox').innerHTML = `
     <div class="eyebrow">ปรับยอดสต็อก</div>
     <h3 style="margin:7px 0 4px;font-size:19px">${esc(it.name)}</h3>
@@ -2142,14 +2520,36 @@ function renderModal(){
       </select></label>
     <label class="fld"><span>จำนวน (${esc(it.unit)})</span>
       <input class="inp" id="adjQty" type="number" min="1" inputmode="numeric" value="${esc(a.qty)}" placeholder="เช่น 20"></label>
+    ${isRcv ? `<label class="fld"><span>วันที่รับเข้า</span>
+      <input class="inp" id="adjDate" type="date" max="${today}" value="${esc(a.date)}"></label>
+    <div class="fldhint">ไม่เลือก = ใช้วันที่ของเครื่องนี้ (${esc(fmtD(today))})</div>` : ''}
+    <label class="fld"><span>ผู้บันทึก <b class="fldreq">*</b></span>
+      <input class="inp" id="adjRecorder" value="${esc(a.recorder)}" placeholder="พิมพ์ชื่อผู้บันทึก" autocomplete="off"></label>
     <label class="fld"><span>หมายเหตุ (ถ้ามี)</span>
       <input class="inp" id="adjNote" value="${esc(a.note)}" placeholder="เช่น รับจากผู้ขาย ใบส่งของ 1234"></label>
+    ${photoField}
     <div style="display:flex;gap:10px">
       <button class="btn ghost" data-act="adjClose" ${state.busy?'disabled':''}>ยกเลิก</button>
-      <button class="btn" style="flex:1" data-act="adjSave" ${state.busy?'disabled':''}>
-        ${state.busy ? 'กำลังบันทึก…' : '✓ บันทึก'}</button>
+      <button class="btn" style="flex:1" data-act="adjSave" ${state.busy||a.photoBusy?'disabled':''}>
+        ${state.busy ? (a.stage === 'photo' ? 'กำลังอัปโหลดรูป…' : 'กำลังบันทึก…') : '✓ บันทึก'}</button>
     </div>
     <p style="color:var(--tx3);font-size:12px;margin:14px 0 0">ทุกการปรับยอดถูกบันทึกลง audit trail ย้อนดูได้เสมอ</p>`;
+  ov.classList.add('show');
+}
+
+/* ---------- A20: modal เปิดดูรูปถ่ายตอนรับของ ---------- */
+function modalPhoto(ov){
+  const p = state.photoView;
+  const url = receiptPhotoUrl(p.path);
+  $('#modalBox').innerHTML = `
+    <div class="eyebrow">รูปถ่ายตอนรับของ</div>
+    <h3 style="margin:7px 0 4px;font-size:18px">${esc(p.name)}</h3>
+    <p style="color:var(--tx2);font-size:13px;margin:0 0 12px">รับวันที่ ${esc(fmtD(p.day))} · ${esc(p.qty)} ${esc(p.unit)}${p.actor ? ` · ผู้บันทึก ${esc(p.actor)}` : ''}</p>
+    <div class="photoview"><img src="${esc(url)}" alt="รูปถ่ายตอนรับ ${esc(p.name)}"></div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <a class="btn ghost" href="${esc(url)}" target="_blank" rel="noopener" style="flex:1;text-decoration:none">เปิดรูปขนาดเต็ม</a>
+      <button class="btn" style="flex:1" data-act="photoClose">ปิด</button>
+    </div>`;
   ov.classList.add('show');
 }
 
@@ -2568,6 +2968,8 @@ document.addEventListener('click', async (e) => {
     state.person = ''; state.note = ''; state.dept = ''; state.reqStep = 1;
     // ล้างข้อมูลฝั่ง admin ออกจากหน่วยความจำด้วย ไม่ให้ค้างให้คนถัดไปเห็น
     state.history = []; state.moves = []; state.p2loaded = false;
+    state.receipts = []; state.rcvErr = null; state.photoView = null; state.lastRecorder = '';   // A20
+    state.rcvYear = 'all'; state.rcvMonth = 'all'; state.rcvItem = 'all'; state.rcvPage = 1;
     state.adjust = null; state.edit = null; state.hq = ''; state.month = null;
     state.store = []; state.storeMsg = null; state.storeConfirm = null;
     dlog('PIN', 'ออกจากระบบ ลืมรหัสแล้ว');
@@ -2745,39 +3147,80 @@ document.addEventListener('click', async (e) => {
   }
 
   else if(act === 'adjOpen'){
-    state.adjust = { itemId: el.dataset.id, mode:'receive', qty:'', note:'', err:null };
+    // A20: recorder = ผู้บันทึก · date = วันที่รับเข้า ('' = วันของเครื่อง) · photo = รูปที่บีบแล้ว (อัปโหลดตอนกดบันทึก)
+    state.adjust = { itemId: el.dataset.id, mode:'receive', qty:'', note:'', err:null,
+                     recorder: state.lastRecorder || '', date:'', photo:null, photoUrl:null, photoBusy:false, stage:null };
     render();
   }
-  else if(act === 'adjClose'){ state.adjust = null; render(); }
+  else if(act === 'adjClose'){
+    if(state.adjust && state.adjust.photoUrl) URL.revokeObjectURL(state.adjust.photoUrl);
+    state.adjust = null; render();
+  }
+  else if(act === 'adjPhotoDel'){
+    const a = state.adjust; if(!a) return;
+    if(a.photoUrl) URL.revokeObjectURL(a.photoUrl);
+    a.photo = null; a.photoUrl = null; render();
+  }
+
+  /* ---------- A20: แท็บรับเข้า ---------- */
+  else if(act === 'rcvPage'){ state.rcvPage = Number(el.dataset.p) || 1; render(); }
+  else if(act === 'rcvClear'){
+    state.rcvYear = 'all'; state.rcvMonth = 'all'; state.rcvItem = 'all'; state.rcvPage = 1;
+    render();
+  }
+  else if(act === 'rcvCSV'){
+    const list = filterReceipts(state.receipts, { year: state.rcvYear, month: state.rcvMonth, item: state.rcvItem });
+    downloadCSV(`รับเข้า-PPE-${todayISO()}.csv`, receiptsToCSV(list));
+    dlog('RCV', `ดาวน์โหลด CSV ${list.length} แถว`);
+  }
+  else if(act === 'rcvPhoto'){
+    const r = (state.receipts || []).find(x => String(x.id) === String(el.dataset.id));
+    if(!r || !r.photo_path) return;
+    state.photoView = { path: r.photo_path, name: r.name, day: rcvDay(r), qty: r.qty, unit: r.unit,
+                        actor: r.actor && r.actor !== 'ADMIN' ? r.actor : '' };
+    render();
+  }
+  else if(act === 'photoClose'){ state.photoView = null; render(); }
 
   else if(act === 'adjSave'){
-    const a = state.adjust; if(!a) return;
+    const a = state.adjust; if(!a || a.photoBusy) return;
     const mSel = $('#adjMode'); if(mSel) a.mode = mSel.value;
     const qEl  = $('#adjQty');  if(qEl)  a.qty  = qEl.value;
     const nEl  = $('#adjNote'); if(nEl)  a.note = nEl.value;
+    const rEl  = $('#adjRecorder'); if(rEl) a.recorder = rEl.value;   // A20
+    const dEl  = $('#adjDate');     if(dEl) a.date     = dEl.value;   // A20
 
     const q = Number(a.qty);
-    if(!q || q <= 0 || !Number.isInteger(q)){ a.err = 'กรุณากรอกจำนวนเป็นจำนวนเต็มมากกว่า 0'; render(); return; }
+    const it = state.items.find(i => i.id === a.itemId);
+    // A20: ด่านจำนวน / ผู้บันทึก / วันที่รับ / สต็อกติดลบ รวมไว้ใน validateAdjust ที่เดียว (มี test คุม)
+    const bad = validateAdjust(a, it, todayISO());
+    if(bad){ a.err = bad; render(); return; }
     const delta  = a.mode === 'adjust-' ? -q : q;
     const reason = a.mode === 'receive' ? 'receive' : 'adjust';
-    const it = state.items.find(i => i.id === a.itemId);
-    if(it && it.stock + delta < 0){
-      a.err = `ปรับแล้วสต็อกติดลบ (คงเหลือ ${it.stock} ${it.unit})`; render(); return;
-    }
+    const isRcv  = reason === 'receive';
 
     a.err = null; state.busy = true; render();
     try{
-      const res = await adjustStock(a.itemId, delta, reason, a.note.trim());
+      // A20: มีรูป = อัปโหลดก่อน ได้ path แล้วค่อยบันทึกยอด (อัปโหลดพัง = ยอดยังไม่ถูกบันทึก)
+      let photoPath = null;
+      if(isRcv && a.photo){ a.stage = 'photo'; render(); photoPath = await uploadReceiptPhoto(a.photo.blob, a.itemId); }
+      a.stage = 'save'; render();
+      const res = await adjustStock(a.itemId, delta, reason, a.note.trim(), {
+        actor: a.recorder, receivedOn: isRcv ? (a.date || todayISO()) : null, photoPath
+      });
       dlog('OK', `ปรับยอด ${a.itemId} สำเร็จ เหลือ ${res && res.stock}`);
+      state.lastRecorder = String(a.recorder || '').trim();
+      if(a.photoUrl) URL.revokeObjectURL(a.photoUrl);
       state.adjust = null; state.busy = false;
       state.loading = true; render();
       await loadItems();
       await loadMovements();
+      await loadReceipts();                    // A20: แท็บรับเข้าต้องเห็นรายการใหม่ทันที
       await loadDashboard();                   // สต็อกเปลี่ยน = KPI แดชบอร์ดต้องเปลี่ยนตาม
       state.loading = false;
     }catch(ex){
       state.busy = false; state.loading = false;
-      if(state.adjust) state.adjust.err = ex.message || String(ex);
+      if(state.adjust){ state.adjust.err = ex.message || String(ex); state.adjust.stage = null; }
       dlog('ERROR', 'ปรับยอดไม่สำเร็จ: ' + (ex.message||ex), true);
     }
     render();
@@ -2843,8 +3286,37 @@ document.addEventListener('click', async (e) => {
 // เปลี่ยนเดือนในกราฟ 2
 document.addEventListener('change', (e) => {
   if(e.target.id === 'monthSel'){ state.month = e.target.value; dlog('DASH', 'กรองเดือน ' + state.month); render(); }
+  // A20: กล่องปรับยอด — เปลี่ยนประเภทแล้วช่องวันที่/รูปต้องโผล่หรือหาย · เลือกรูปแล้วบีบทันที
+  if(state.adjust && e.target.id === 'adjMode'){ state.adjust.mode = e.target.value; render(); }
+  if(state.adjust && e.target.id === 'adjDate'){ state.adjust.date = e.target.value; }
+  if(e.target.id === 'adjPhoto') pickAdjPhoto(e.target);
+  // A20: ตัวกรองแท็บรับเข้า (id ตรงกับชื่อ state) — เปลี่ยนตัวกรอง = กลับหน้า 1 ของตาราง
+  if(e.target.id === 'rcvYear' || e.target.id === 'rcvMonth' || e.target.id === 'rcvItem'){
+    state[e.target.id] = e.target.value || 'all'; state.rcvPage = 1;
+    dlog('RCV', `กรอง ปี ${state.rcvYear} · เดือน ${state.rcvMonth} · รายการ ${state.rcvItem}`);
+    render();
+  }
   editField(e.target);        // เฟส 4: dropdown ในฟอร์มรายการ PPE (select ไม่ยิง input ทุกเบราว์เซอร์)
 });
+
+// A20: เลือกรูปในกล่องปรับยอด -> บีบรูป -> เก็บไว้ใน state (ยังไม่อัปโหลด จนกว่าจะกดบันทึก)
+async function pickAdjPhoto(input){
+  const a = state.adjust;
+  const file = input && input.files && input.files[0];
+  if(!a || !file || state.busy) return;
+  a.photoBusy = true; a.err = null; render();
+  try{
+    const ph = await compressPhoto(file);
+    if(state.adjust !== a) return;               // ปิดกล่องไปแล้วระหว่างบีบรูป
+    if(a.photoUrl) URL.revokeObjectURL(a.photoUrl);
+    a.photo = ph; a.photoUrl = URL.createObjectURL(ph.blob);
+    dlog('PHOTO', `บีบรูป ${fmtBytes(ph.orig)} -> ${fmtBytes(ph.size)} (${ph.w}×${ph.h} · q ${ph.q})`);
+  }catch(ex){
+    if(state.adjust === a) a.err = ex.message || String(ex);
+    dlog('ERROR', 'บีบรูปไม่สำเร็จ: ' + (ex.message||ex), true);
+  }
+  if(state.adjust === a){ a.photoBusy = false; render(); }
+}
 
 // เฟส 4: เก็บค่าช่องกรอกในฟอร์มรายการ PPE เข้า state ทันที (กัน re-render แล้วค่าหาย)
 // ช่องสีมี 2 ตัวคู่กัน (จานสี + ช่องพิมพ์ HEX) แก้ตัวไหนต้องวิ่งตามกันด้วย
@@ -2865,6 +3337,8 @@ document.addEventListener('input', (e) => {
   if(state.adjust){
     if(e.target.id === 'adjQty')  state.adjust.qty  = e.target.value;
     if(e.target.id === 'adjNote') state.adjust.note = e.target.value;
+    if(e.target.id === 'adjRecorder') state.adjust.recorder = e.target.value;   // A20
+    if(e.target.id === 'adjDate')     state.adjust.date     = e.target.value;   // A20
   }
   editField(e.target);        // เฟส 4: ฟอร์มรายการ PPE
   dbgRefresh();
@@ -2877,7 +3351,7 @@ document.addEventListener('keydown', (e) => {
   if(e.target.id === 'hSearch'){
     const b = document.querySelector('[data-act="hsearch"]'); if(b) b.click();
   }
-  if(e.target.id === 'adjQty' || e.target.id === 'adjNote'){
+  if(e.target.id === 'adjQty' || e.target.id === 'adjNote' || e.target.id === 'adjRecorder'){
     const b = document.querySelector('[data-act="adjSave"]'); if(b) b.click();
   }
 });
@@ -3436,6 +3910,74 @@ test('storeSlip lines=null ไม่พัง คืน []', () => {
 test('storeSlip จ่ายแล้วแต่ issued_by ว่าง ผู้จ่าย=ว่าง', () => {
   const s = storeSlip({id:'REQ-4', req_date:'2026-07-20', person:'ก', status:'issued', issued_by:'', lines:[]});
   assertEq(s.approver, '');
+});
+
+// ---- A20: รับเข้า — กล่องปรับยอด + แท็บแดชบอร์ดรับเข้า ----
+test('fitDims ย่อด้านยาวเหลือ max คงสัดส่วน', () => assertEq(fitDims(4000, 3000, 1600), {w:1600, h:1200}));
+test('fitDims รูปแนวตั้ง', () => assertEq(fitDims(3024, 4032, 1600), {w:1200, h:1600}));
+test('fitDims รูปเล็กกว่า max ไม่ขยาย', () => assertEq(fitDims(800, 600, 1600), {w:800, h:600}));
+test('fitDims ขนาด 0/ผิดรูปแบบ คืน 0', () => assertEq(fitDims(0, 'x', 1600), {w:0, h:0}));
+test('fmtBytes KB/MB', () => assertEq([fmtBytes(0), fmtBytes(512*1024), fmtBytes(3.4*1048576), fmtBytes(null)], ['0 KB','512 KB','3.4 MB','0 KB']));
+const ADJ = o => Object.assign({ mode:'receive', qty:'5', recorder:'สมชาย', date:'', note:'' }, o);
+test('validateAdjust ข้อมูลครบ ผ่าน', () => assertEq(validateAdjust(ADJ(), {stock:0, unit:'คู่'}, '2026-09-15'), null));
+test('validateAdjust ไม่พิมพ์ผู้บันทึก (ช่องว่างล้วน)', () => assertEq(validateAdjust(ADJ({recorder:'   '}), {stock:0}, '2026-09-15'), 'กรุณาพิมพ์ชื่อผู้บันทึก'));
+test('validateAdjust จำนวน ว่าง/ศูนย์/ติดลบ/ทศนิยม', () => {
+  const m = 'กรุณากรอกจำนวนเป็นจำนวนเต็มมากกว่า 0';
+  assertEq(['', '0', '-3', '1.5'].map(q => validateAdjust(ADJ({qty:q}), {stock:0}, '2026-09-15')), [m, m, m, m]);
+});
+test('validateAdjust วันที่รับเข้าเกินวันนี้', () => assertEq(validateAdjust(ADJ({date:'2026-09-16'}), {stock:0}, '2026-09-15'), 'วันที่รับเข้าต้องไม่เกินวันนี้'));
+test('validateAdjust วันที่ย้อนหลังได้', () => assertEq(validateAdjust(ADJ({date:'2026-07-31'}), {stock:0}, '2026-09-15'), null));
+test('validateAdjust ไม่เลือกวันที่ = ผ่าน (ใช้วันของเครื่อง)', () => assertEq(validateAdjust(ADJ({date:''}), {stock:0}, '2026-09-15'), null));
+test('validateAdjust วันที่ผิดรูปแบบ', () => assertEq(validateAdjust(ADJ({date:'15/09/2026'}), {stock:0}, '2026-09-15'), 'วันที่รับเข้าไม่ถูกต้อง'));
+test('validateAdjust ปรับยอดลดจนติดลบ', () => assertEq(validateAdjust(ADJ({mode:'adjust-', qty:'9'}), {stock:5, unit:'ใบ'}, '2026-09-15'), 'ปรับแล้วสต็อกติดลบ (คงเหลือ 5 ใบ)'));
+test('validateAdjust ปรับยอดไม่ตรวจวันที่ (วันที่ใช้กับรับเข้าเท่านั้น)', () => assertEq(validateAdjust(ADJ({mode:'adjust+', date:'2099-01-01'}), {stock:5}, '2026-09-15'), null));
+test('validateAdjust รับ null', () => assertEq(validateAdjust(null, null, ''), 'ไม่พบข้อมูลที่จะบันทึก'));
+const TOK = '0f8fad5b-d9cb-469f-a165-70867728950e';
+test('receiptPhotoPath รูปแบบตรงกับที่ DB ตรวจ', () => assertEq(receiptPhotoPath(TOK, 'glove-01', 1726380000000), TOK + '/glove-01-1726380000000.jpg'));
+test('receiptPhotoPath ตั๋วผิดรูปแบบ คืน null', () => assertEq(receiptPhotoPath('abc', 'glove-01', 1), null));
+test('receiptPhotoPath ตัดอักขระแปลกในรหัสรายการ', () => assertEq(receiptPhotoPath(TOK, 'a/../b c', 5), TOK + '/abc-5.jpg'));
+const RCV = [
+  {id:1, item_id:'g1', name:'ถุงมือผ้า',    unit:'คู่',  qty:761,  day:'2026-07-31', created_at:'2026-07-31T03:00:00Z', actor:'ADMIN'},
+  {id:2, item_id:'g1', name:'ถุงมือผ้า',    unit:'คู่',  qty:1500, day:'2026-08-08', created_at:'2026-08-08T03:00:00Z', actor:'สมชาย'},
+  {id:3, item_id:'m1', name:'หน้ากาก N-95', unit:'ชิ้น', qty:60,   day:'2026-09-02', created_at:'2026-09-02T03:00:00Z'},
+  {id:4, item_id:'m1', name:'หน้ากาก N-95', unit:'ชิ้น', qty:40,   day:'2025-12-30', created_at:'2025-12-30T03:00:00Z'}
+];
+test('rcvDay ใช้ day จาก DB ก่อน', () => assertEq(rcvDay({day:'2026-07-31', created_at:'2026-08-01T01:00:00Z'}), '2026-07-31'));
+test('rcvDay แถวเก่าไม่มี day ใช้วันไทยของ created_at (23:30Z = วันถัดไป)', () => assertEq(rcvDay({created_at:'2026-07-30T23:30:00Z'}), '2026-07-31'));
+test('rcvDay รับ null', () => assertEq(rcvDay(null), ''));
+test('rcvYears ใหม่ไปเก่า ไม่ซ้ำ', () => assertEq(rcvYears(RCV), ['2026','2025']));
+test('rcvItemOptions ไม่ซ้ำ เรียงตามชื่อ', () => assertEq(rcvItemOptions(RCV).map(o => o.id), ['g1','m1']));
+test('filterReceipts ไม่กรอง = ทั้งหมด', () => assertEq(filterReceipts(RCV, {}).length, 4));
+test('filterReceipts ปี+เดือน', () => assertEq(filterReceipts(RCV, {year:'2026', month:'08', item:'all'}).map(r => r.id), [2]));
+test('filterReceipts เดือนเดียวของทุกปี', () => assertEq(filterReceipts(RCV, {year:'all', month:'12', item:'all'}).map(r => r.id), [4]));
+test('filterReceipts ปี+รายการ', () => assertEq(filterReceipts(RCV, {year:'2026', month:'all', item:'m1'}).map(r => r.id), [3]));
+test('filterReceipts รับ null', () => assertEq(filterReceipts(null, null).length, 0));
+test('receiptSummary รวม/ครั้ง/รายการ/วัน/ล่าสุด', () => {
+  const s = receiptSummary(RCV);
+  assertEq([s.qty, s.count, s.items, s.days, s.last], [2361, 4, 2, 4, '2026-09-02']);
+});
+test('receiptSummary ว่าง', () => {
+  const s = receiptSummary([]);
+  assertEq([s.qty, s.count, s.items, s.days, s.last], [0, 0, 0, 0, '']);
+});
+test('receiptsByItem เรียงมากไปน้อย พร้อมจำนวนครั้งและวันล่าสุด', () =>
+  assertEq(receiptsByItem(RCV).map(r => [r.id, r.qty, r.count, r.last]), [['g1', 2261, 2, '2026-08-08'], ['m1', 100, 2, '2026-09-02']]));
+test('receiptSeries ปี+เดือน = รายวันครบทั้งเดือน', () => {
+  const s = receiptSeries(RCV, {year:'2026', month:'08'});
+  assertEq([s.mode, s.rows.length, s.rows[7].qty, s.rows[0].qty], ['day', 31, 1500, 0]);
+});
+test('receiptSeries ทุกปี = รายเดือน เติมเดือนที่ขาด', () => {
+  const s = receiptSeries(RCV, {year:'all', month:'all'});
+  assertEq([s.mode, s.rows[0].k, s.rows[s.rows.length-1].k, s.rows.length], ['month', '2025-12', '2026-09', 10]);
+});
+test('receiptSeries เลือกปีเดียว = ม.ค.-ธ.ค. ครบ 12 เดือน', () => {
+  const s = receiptSeries(filterReceipts(RCV, {year:'2026'}), {year:'2026', month:'all'});
+  assertEq([s.rows.length, s.rows[6].qty, s.rows[7].qty, s.rows[11].qty], [12, 761, 1500, 0]);
+});
+test('receiptSeries ไม่มีข้อมูล', () => assertEq(receiptSeries([], {}).rows.length, 0));
+test('receiptsToCSV มี BOM + หัวตาราง + escape "', () => {
+  const c = receiptsToCSV([{item_id:'a', name:'ชื่อ "พิเศษ"', qty:3, unit:'ชิ้น', day:'2026-09-01', actor:'สมชาย', note:'', photo_path:'x/y.jpg', created_at:''}]);
+  assertEq([c.charCodeAt(0), c.split('\r\n').length, c.includes('ชื่อ ""พิเศษ""'), c.includes('"มี"')], [0xFEFF, 2, true, true]);
 });
 
 function runTests(){
