@@ -472,6 +472,37 @@ table.tb td.num{text-align:right;font-weight:700;color:var(--y);font-variant-num
   #doc th{background:#111!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   #doc .note{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
+
+/* ---------- A21: รายงานรับเข้า PDF (พิมพ์เฉพาะตอนกดปุ่ม · บนจอซ่อนเสมอ) ---------- */
+#rptPrint{display:none}
+@media print{
+  body.rpt-rcv > *:not(#rptPrint){display:none!important}
+  body.rpt-rcv #rptPrint{display:block}
+}
+.rpt{color:#1b1e26;font-size:10.5pt;line-height:1.45;font-weight:400;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.rpt h1{font-size:19pt;font-weight:700;margin:0 0 2px;color:#1b1e26}
+.rpt .sub{color:#5a5f6d;font-size:9pt;margin-bottom:10px}
+.rpt .kp{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:7px}
+.rpt .box{border:1px solid #d3d7df;border-radius:6px;padding:7px 11px}
+.rpt .kp b{display:block;font-size:17pt;font-weight:700;line-height:1.25}
+.rpt .kp small{display:block;color:#5a5f6d;font-size:8.5pt;line-height:1.35}
+.rpt .mo{display:grid;gap:7px;margin-bottom:6px}
+.rpt .mo .box{display:flex;justify-content:space-between;gap:8px;padding:5px 11px}
+.rpt .mo b{font-variant-numeric:tabular-nums}
+.rpt h2{font-size:12.5pt;font-weight:600;margin:16px 0 0;padding-bottom:4px;border-bottom:2.5px solid #1b1e26;break-after:avoid;page-break-after:avoid}
+.rpt table{width:100%;border-collapse:collapse;font-size:9.5pt}
+.rpt thead{display:table-header-group}
+.rpt th{background:#eef0f4;text-align:left;font-weight:600;padding:5px 7px;border-bottom:1px solid #9aa0ac}
+.rpt td{padding:4px 7px;border-bottom:1px solid #dfe2e8;vertical-align:top}
+.rpt tr{break-inside:avoid;page-break-inside:avoid}
+.rpt .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rpt .d{font-weight:600;white-space:nowrap}
+.rpt .u{white-space:nowrap}
+.rpt tr.tot td{background:#f2f3f6;font-weight:600;border-bottom:1.5px solid #9aa0ac}
+.rpt tr.all td{font-weight:700;border-top:2.5px solid #1b1e26;border-bottom:0;padding-top:6px}
+.rpt .cond{background:#fff4e8;border-left:4px solid #c2570c;padding:8px 12px 8px 28px;margin:8px 0 0}
+.rpt .cond li{margin:2px 0}
+.rpt .src{color:#5a5f6d;font-size:8pt;border-top:1px solid #d3d7df;padding-top:6px;margin-top:12px}
 </style>
 </head>
 <body>
@@ -521,6 +552,7 @@ table.tb td.num{text-align:right;font-weight:700;color:var(--y);font-variant-num
 
 <div id="overlay"><div class="modal" id="modalBox"></div></div>
 <div id="dbg"></div>
+<div id="rptPrint"></div><!-- A21: ที่วางรายงานรับเข้าตอนสั่งพิมพ์ -->
 
 <script>
 /* ============================================================
@@ -881,6 +913,53 @@ function receiptsToCSV(list){
   const rows = (list||[]).map(r => [rcvDay(r), r.item_id||'', r.name||'', Number(r.qty)||0, r.unit||'',
     r.actor||'', r.note||'', r.photo_path ? 'มี' : '', fmtDT(r.created_at)].map(q).join(','));
   return '\uFEFF' + [head.map(q).join(','), ...rows].join('\r\n');
+}
+
+/* ---------- A21: รายงานรับเข้า PDF (pure) ---------- */
+// วันที่แบบ พ.ศ. สำหรับรายงาน เช่น "31 ก.ค. 2569" · short=true ตัดปี "31 ก.ค."
+function fmtDBE(iso, short){
+  if(!iso) return '—';
+  const [y,m,d] = String(iso).slice(0,10).split('-').map(Number);
+  if(!y||!m||!d) return '—';
+  return d + ' ' + TH_M[m-1] + (short ? '' : ' ' + (y + 543));
+}
+// ข้อความผู้บันทึก/หมายเหตุของแถวรับเข้า 1 ครั้ง (actor 'ADMIN' = แถวเก่าก่อน A20 ไม่นับเป็นชื่อ)
+function rcvNoteText(r){
+  if(!r) return '';
+  const a = r.actor && r.actor !== 'ADMIN' ? String(r.actor).trim() : '';
+  const n = String(r.note || '').trim();
+  return [a, n].filter(Boolean).join(' · ');
+}
+// ข้อมูลรายงานรับเข้า: KPI / ยอดรายเดือน / แยกวัน (เก่า → ใหม่ · รายการเดียวกันในวันเดียวรวมแถว) / แยกรายการ
+function receiptReport(list){
+  const arr = (list || []).filter(r => r && rcvDay(r));
+  const sum = receiptSummary(arr);
+  const dayMap = {}, monMap = {}, itemMap = {};
+  arr.forEach(r => {
+    const d = rcvDay(r), q = Number(r.qty) || 0, k = r.item_id || '';
+    monMap[d.slice(0,7)] = (monMap[d.slice(0,7)] || 0) + q;
+    const day = dayMap[d] || (dayMap[d] = { day:d, total:0, items:{} });
+    day.total += q;
+    const g = day.items[k] || (day.items[k] = { id:k, name:r.name || k, unit:r.unit || '', qty:0, count:0, texts:[] });
+    g.qty += q; g.count++; g.texts.push(rcvNoteText(r));
+    const it = itemMap[k] || (itemMap[k] = { id:k, name:r.name || k, unit:r.unit || '', qty:0, days:new Set() });
+    it.qty += q; it.days.add(d);
+  });
+  const byName = (a,b) => b.qty - a.qty || String(a.name).localeCompare(String(b.name), 'th');
+  const days = Object.keys(dayMap).sort().map(d => {
+    const rows = Object.values(dayMap[d].items).sort(byName).map(g => {
+      const uniq = [...new Set(g.texts.map(t => t || 'ไม่มีหมายเหตุ'))];
+      const note = g.count > 1 ? 'บันทึก ' + g.count + ' ครั้ง · ' + uniq.join(' / ') : (g.texts[0] || '');
+      return { id:g.id, name:g.name, unit:g.unit, qty:g.qty, count:g.count, note };
+    });
+    return { day:d, total:dayMap[d].total, rows };
+  });
+  let top = null;
+  days.forEach(d => { if(!top || d.total > top.total) top = { day:d.day, total:d.total }; });
+  const months = Object.keys(monMap).sort().map(k => ({ k, qty:monMap[k] }));
+  const items = Object.values(itemMap).map(o => ({ id:o.id, name:o.name, unit:o.unit, qty:o.qty, days:o.days.size })).sort(byName);
+  const first = days.length ? days[0].day : '';
+  return { qty:sum.qty, count:sum.count, itemCount:items.length, dayCount:days.length, first, last:sum.last, top, months, days, items };
 }
 
 /* ---------- เฟส 2: สรุปยอด (pure ทั้งหมด ทดสอบด้วย ?test=1) ---------- */
@@ -2151,6 +2230,7 @@ function viewReceive(){
     <div class="rcvacts">
       ${filtered ? `<button class="btn ghost sm" data-act="rcvClear">✕ ล้างตัวกรอง</button>` : ''}
       <button class="btn ghost sm" data-act="rcvCSV" ${list.length?'':'disabled'}>⬇ ดาวน์โหลด CSV (${list.length} แถว)</button>
+      <button class="btn ghost sm" data-act="rcvPDF" ${list.length?'':'disabled'}>🖨 ส่งออก PDF</button>
       <button class="btn ghost sm" data-act="tab" data-tab="stock">＋ บันทึกรับของ (หน้าคลัง PPE)</button>
     </div>
   </div>`;
@@ -2233,6 +2313,82 @@ function viewReceive(){
     ${pager}
   </div>
   <button class="btn ghost sm" data-act="reload">↻ ดึงข้อมูลใหม่</button>`;
+}
+
+/* ---------- A21: HTML รายงานรับเข้า (หน้าตาตามไฟล์ รายงานรับเข้า-PPE-15ก.ย.2569.pdf) ---------- */
+// f = ตัวกรองแท็บรับเข้า · itemName = ชื่อรายการที่กรอง (ถ้ามี) · nowTs = เวลาที่ออกรายงาน
+function reportReceiveHTML(list, f, itemName, nowTs){
+  const g = f || {};
+  const rp = receiptReport(list);
+  const n = v => (Number(v) || 0).toLocaleString('en-US');
+  const yBE = y => String(Number(y) + 543);
+  const scope = (g.month && g.month !== 'all'
+      ? TH_M[Number(g.month) - 1] + (g.year && g.year !== 'all' ? ' ' + yBE(g.year) : ' ของทุกปี')
+      : (g.year && g.year !== 'all' ? 'ปี ' + yBE(g.year) : 'ทั้งหมดตั้งแต่เริ่มระบบ'))
+    + (itemName ? ' · ' + itemName : '');
+  const now = nowTs ? new Date(nowTs) : new Date();
+  const nowTxt = fmtDBE(todayISO(now)) + ' ' + String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0') + ' น.';
+
+  if(!rp.days.length){
+    return `<div class="rpt"><h1>รายงานการรับ PPE เข้าคลัง</h1>
+      <div class="sub">ระบบเบิกจ่าย PPE (SafeGear) · ${esc(scope)} · ออกรายงานเมื่อ ${esc(nowTxt)}</div>
+      <p>ไม่มีการรับเข้าในช่วงที่เลือก</p></div>`;
+  }
+
+  // ยอดรายเดือน — เดือนล่าสุดที่ข้อมูลยังไม่ถึงสิ้นเดือน ต่อท้าย "(ถึง …)"
+  const lastM = rp.last.slice(0,7);
+  const mo = rp.months.map(m => {
+    const partial = m.k === lastM && Number(rp.last.slice(8,10)) < daysInMonth(m.k);
+    const lbl = TH_M[Number(m.k.slice(5,7)) - 1] + ' ' + yBE(m.k.slice(0,4)) + (partial ? ' (ถึง ' + fmtDBE(rp.last, true) + ')' : '');
+    return `<div class="box"><span>${esc(lbl)}</span><b>${n(m.qty)}</b></div>`;
+  }).join('');
+
+  const dayRows = rp.days.map(d => d.rows.map((r, i) => `<tr>
+      <td class="d">${i === 0 ? esc(fmtDBE(d.day)) : ''}</td>
+      <td>${esc(r.name)}</td>
+      <td class="n">${n(r.qty)}</td>
+      <td class="u">${esc(r.unit)}</td>
+      <td>${esc(r.note)}</td></tr>`).join('')
+    + `<tr class="tot"><td></td><td>รวมวันที่ ${esc(fmtDBE(d.day, true))}${d.rows.length > 1 ? ' (' + d.rows.length + ' รายการ)' : ''}</td>
+      <td class="n">${n(d.total)}</td><td></td><td></td></tr>`).join('');
+
+  const itemRows = rp.items.map((r, i) => `<tr>
+      <td>${i + 1}</td><td>${esc(r.name)}</td><td class="n">${n(r.qty)}</td>
+      <td class="u">${esc(r.unit)}</td><td class="n">${r.days}</td></tr>`).join('');
+
+  return `<div class="rpt">
+  <h1>รายงานการรับ PPE เข้าคลัง</h1>
+  <div class="sub">ระบบเบิกจ่าย PPE (SafeGear) · ${esc(scope)} · รายการรับตั้งแต่ ${esc(fmtDBE(rp.first))} ถึง ${esc(fmtDBE(rp.last))} · ดึงข้อมูลจากฐานข้อมูลจริงเมื่อ ${esc(nowTxt)}</div>
+  <div class="kp">
+    <div class="box"><b>${n(rp.qty)}</b><small>จำนวนที่รับเข้ารวม (ชิ้น/คู่/ใบ/ตัว)</small></div>
+    <div class="box"><b>${n(rp.itemCount)}</b><small>รายการ PPE ที่มีการรับ</small></div>
+    <div class="box"><b>${n(rp.dayCount)}</b><small>วันที่มีการรับของ (${n(rp.count)} ครั้ง)</small></div>
+    <div class="box"><b>${n(rp.top.total)}</b><small>วันที่รับเยอะสุด: ${esc(fmtDBE(rp.top.day))}</small></div>
+  </div>
+  ${rp.months.length > 1 ? `<div class="mo" style="grid-template-columns:repeat(${Math.min(3, rp.months.length)},1fr)">${mo}</div>` : ''}
+
+  <h2>1) รายการรับเข้า แยกตามวันที่</h2>
+  <table><thead><tr><th style="width:17%">วันที่</th><th>รายการ PPE</th><th class="n" style="width:10%">จำนวน</th><th style="width:7%">หน่วย</th><th style="width:28%">ผู้บันทึก / หมายเหตุ</th></tr></thead>
+  <tbody>${dayRows}
+    <tr class="all"><td colspan="2">รวมทั้งหมด ${n(rp.dayCount)} วัน</td><td class="n">${n(rp.qty)}</td><td></td><td></td></tr>
+  </tbody></table>
+
+  <h2>2) สรุปยอดรับเข้า แยกตามรายการ PPE (มาก → น้อย)</h2>
+  <table><thead><tr><th style="width:6%">#</th><th>รายการ PPE</th><th class="n" style="width:12%">รับรวม</th><th style="width:8%">หน่วย</th><th class="n" style="width:16%">จำนวนวันที่รับ</th></tr></thead>
+  <tbody>${itemRows}
+    <tr class="all"><td colspan="2">รวม ${n(rp.itemCount)} รายการ</td><td class="n">${n(rp.qty)}</td><td></td><td></td></tr>
+  </tbody></table>
+
+  <h2>3) เงื่อนไขการนับ</h2>
+  <ol class="cond">
+    <li><b>ช่วงข้อมูล:</b> ${esc(scope)} (ตามตัวกรองในแท็บรับเข้า ณ ตอนออกรายงาน)</li>
+    <li><b>นับเฉพาะ "รับของเข้า":</b> ไม่รวมการปรับยอด ยอดยกมาตั้งต้น และสต็อกที่คืนจากการยกเลิกใบเบิก</li>
+    <li><b>รวมแถว:</b> รายการเดียวกันที่รับหลายครั้งในวันเดียว รวมเป็นแถวเดียวและระบุจำนวนครั้งที่บันทึก</li>
+    <li><b>หน่วย:</b> ใช้หน่วยปัจจุบันของแต่ละรายการ · ยอดรวมเป็นการบวกหลายหน่วยรวมกัน (ชิ้น/คู่/ใบ/ตัว/อัน) ใช้ดูปริมาณโดยรวมเท่านั้น</li>
+    <li><b>วันที่:</b> ใช้วันที่รับเข้าที่ผู้บันทึกเลือก · ถ้าไม่ได้เลือก ใช้วันตามเวลาประเทศไทย (UTC+7) ของเวลาที่บันทึก</li>
+  </ol>
+  <div class="src">แหล่งข้อมูล: ตาราง stock_movements (เฉพาะประเภท receive) ในฐานข้อมูล Supabase ของระบบเบิกจ่าย PPE · ออกรายงานเมื่อ ${esc(nowTxt)}</div>
+</div>`;
 }
 
 /* ---------- แท็บสโตร์: จ่ายของ + บันทึกผู้จ่าย ---------- */
@@ -3173,6 +3329,27 @@ document.addEventListener('click', async (e) => {
     downloadCSV(`รับเข้า-PPE-${todayISO()}.csv`, receiptsToCSV(list));
     dlog('RCV', `ดาวน์โหลด CSV ${list.length} แถว`);
   }
+  // A21: ส่งออก PDF = ใส่รายงานลง #rptPrint แล้วเปิดหน้าต่างพิมพ์ (เลือก "บันทึกเป็น PDF")
+  //   ชื่อไฟล์ PDF มาจาก document.title จึงเปลี่ยนชั่วคราว แล้วคืนค่าหลังปิดหน้าต่างพิมพ์
+  else if(act === 'rcvPDF'){
+    const f = { year: state.rcvYear || 'all', month: state.rcvMonth || 'all', item: state.rcvItem || 'all' };
+    const list = filterReceipts(state.receipts, f);
+    if(!list.length) return;
+    const pick = f.item !== 'all' ? rcvItemOptions(state.receipts).find(o => o.id === f.item) : null;
+    const box = $('#rptPrint');
+    box.innerHTML = reportReceiveHTML(list, f, pick ? pick.name : '', Date.now());
+    const oldTitle = document.title;
+    document.title = 'รายงานรับเข้า-PPE-' + fmtDBE(todayISO()).replace(/ /g, '');
+    document.body.classList.add('rpt-rcv');
+    const done = () => {
+      document.body.classList.remove('rpt-rcv');
+      document.title = oldTitle; box.innerHTML = '';
+      window.removeEventListener('afterprint', done);
+    };
+    window.addEventListener('afterprint', done);
+    dlog('RCV', `ส่งออก PDF ${list.length} แถว`);
+    window.print();
+  }
   else if(act === 'rcvPhoto'){
     const r = (state.receipts || []).find(x => String(x.id) === String(el.dataset.id));
     if(!r || !r.photo_path) return;
@@ -3979,6 +4156,39 @@ test('receiptsToCSV มี BOM + หัวตาราง + escape "', () => {
   const c = receiptsToCSV([{item_id:'a', name:'ชื่อ "พิเศษ"', qty:3, unit:'ชิ้น', day:'2026-09-01', actor:'สมชาย', note:'', photo_path:'x/y.jpg', created_at:''}]);
   assertEq([c.charCodeAt(0), c.split('\r\n').length, c.includes('ชื่อ ""พิเศษ""'), c.includes('"มี"')], [0xFEFF, 2, true, true]);
 });
+// A21: รายงานรับเข้า PDF
+test('fmtDBE ปี พ.ศ. + แบบสั้น + ค่าว่าง', () => assertEq([fmtDBE('2026-07-31'), fmtDBE('2026-07-31', true), fmtDBE('')], ['31 ก.ค. 2569', '31 ก.ค.', '—']));
+test('rcvNoteText ชื่อ+หมายเหตุ / ADMIN ไม่นับ / null', () =>
+  assertEq([rcvNoteText({actor:'ปอร์', note:'S-11'}), rcvNoteText({actor:'ADMIN', note:''}), rcvNoteText(null)], ['ปอร์ · S-11', '', '']));
+test('receiptReport KPI + วันเรียงเก่าไปใหม่ + วันเยอะสุด', () => {
+  const r = receiptReport(RCV);
+  assertEq([r.qty, r.itemCount, r.dayCount, r.count, r.first, r.last, r.top.day, r.top.total, r.days.map(d => d.day)],
+    [2361, 2, 4, 4, '2025-12-30', '2026-09-02', '2026-08-08', 1500, ['2025-12-30','2026-07-31','2026-08-08','2026-09-02']]);
+});
+test('receiptReport รวมรายการเดียวกันในวันเดียว + ข้อความจำนวนครั้ง', () => {
+  const r = receiptReport([
+    {id:1, item_id:'h', name:'หมวก', unit:'ใบ', qty:4, day:'2026-07-24', actor:'ปอร์'},
+    {id:2, item_id:'h', name:'หมวก', unit:'ใบ', qty:6, day:'2026-07-24', actor:'ADMIN'},
+    {id:3, item_id:'h', name:'หมวก', unit:'ใบ', qty:1, day:'2026-07-24', actor:'ปอร์'},
+    {id:4, item_id:'e', name:'แว่น', unit:'อัน', qty:2, day:'2026-07-24', actor:'ปอร์'}]);
+  const d = r.days[0];
+  assertEq([r.days.length, d.total, d.rows.map(x => [x.id, x.qty, x.note])],
+    [1, 13, [['h', 11, 'บันทึก 3 ครั้ง · ปอร์ / ไม่มีหมายเหตุ'], ['e', 2, 'ปอร์']]]);
+});
+test('receiptReport แยกรายการ มาก→น้อย + จำนวนวันที่รับ + ยอดรายเดือน', () => {
+  const r = receiptReport(RCV);
+  assertEq([r.items.map(x => [x.id, x.qty, x.days]), r.months.map(m => [m.k, m.qty])],
+    [[['g1', 2261, 2], ['m1', 100, 2]], [['2025-12', 40], ['2026-07', 761], ['2026-08', 1500], ['2026-09', 60]]]);
+});
+test('receiptReport ว่าง/null ไม่พัง', () => {
+  const r = receiptReport(null);
+  assertEq([r.qty, r.days.length, r.items.length, r.top, r.first], [0, 0, 0, null, '']);
+});
+test('reportReceiveHTML ช่วงข้อมูล พ.ศ. + escape ชื่อ', () => {
+  const h = reportReceiveHTML([{id:1, item_id:'x', name:'<ถุงมือ>', unit:'คู่', qty:1500, day:'2026-08-08'}], {year:'2026', month:'08', item:'x'}, 'ถุงมือ', Date.UTC(2026,8,17,3,0));
+  assertEq([h.includes('ส.ค. 2569 · ถุงมือ'), h.includes('&lt;ถุงมือ&gt;'), h.includes('1,500'), h.includes('<ถุงมือ>')], [true, true, true, false]);
+});
+test('reportReceiveHTML ไม่มีข้อมูล = ข้อความแจ้ง', () => assertEq(reportReceiveHTML([], {}, '', 0).includes('ไม่มีการรับเข้าในช่วงที่เลือก'), true));
 
 function runTests(){
   let pass = 0; const fails = [];
